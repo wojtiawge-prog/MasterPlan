@@ -1,0 +1,2259 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>Master Plan</title>
+<meta name="theme-color" content="#07090d" />
+<meta name="description" content="Twój osobisty system: nawyki, trening, dieta, finanse i kalendarz." />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Master Plan" />
+<link rel="manifest" href="./manifest.webmanifest" />
+<link rel="icon" href="./icon-192.png" />
+<link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+<style>
+  html, body { margin: 0; padding: 0; background: #07090d; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
+  #root { min-height: 100vh; }
+  #boot { position: fixed; inset: 0; display: grid; place-items: center; background: #07090d; color: #8b97a7; font-family: system-ui, sans-serif; z-index: 9999; }
+  #boot .t { font-weight: 800; font-size: 22px; letter-spacing: -.02em; color: #eef2f6; }
+  #boot .s { font-size: 13px; margin-top: 8px; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.3.1",
+    "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
+    "react-dom": "https://esm.sh/react-dom@18.3.1",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client?deps=react@18.3.1",
+    "lucide-react": "https://esm.sh/lucide-react@0.383.0?deps=react@18.3.1"
+  }
+}
+</script>
+</head>
+<body>
+<div id="root"></div>
+<div id="boot"><div style="text-align:center"><div class="t">MASTER PLAN</div><div class="s">Ładowanie…</div></div></div>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () { navigator.serviceWorker.register("./sw.js").catch(function(){}); });
+  }
+  (function () {
+    var tries = 0;
+    var iv = setInterval(function () {
+      tries++;
+      var r = document.getElementById("root");
+      if ((r && r.childElementCount > 0) || tries > 120) {
+        var b = document.getElementById("boot"); if (b) b.remove(); clearInterval(iv);
+      }
+    }, 100);
+  })();
+</script>
+<script type="module">
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { createRoot } from "react-dom/client";
+import { Flame, Check, Plus, X, Dumbbell, Wallet, ListTodo, Sun, Pill, Timer as TimerIcon, ChevronRight, ChevronLeft, Trash2, ArrowRightLeft, Pause, Play, RotateCcw, Minus, TrendingUp, Target, MoreHorizontal, Coffee, Moon, Zap, PiggyBank, Pencil, Star, CalendarDays, BarChart3, Coins, AlertTriangle, Settings, Bell, Quote, Sparkles, ArrowDownToLine, Lightbulb, Apple, Beef, Wheat, Droplet, ShoppingCart, Store, Carrot, Utensils } from "lucide-react";
+/* ───────────────────────── storage (persists across sessions) ───────────────────────── */
+const mem = new Map();
+const store = {
+    async get(k) {
+        try {
+            if (typeof window !== "undefined" && window.storage) {
+                const r = await window.storage.get(k);
+                return r ? r.value : null;
+            }
+        }
+        catch (e) { }
+        try {
+            const v = localStorage.getItem(k);
+            if (v !== null)
+                return v;
+        }
+        catch (e) { }
+        return mem.has(k) ? mem.get(k) : null;
+    },
+    async set(k, v) {
+        try {
+            if (typeof window !== "undefined" && window.storage) {
+                await window.storage.set(k, v);
+                return;
+            }
+        }
+        catch (e) { }
+        try {
+            localStorage.setItem(k, v);
+            return;
+        }
+        catch (e) { }
+        mem.set(k, v);
+    },
+};
+const load = async (k, fb) => {
+    const raw = await store.get(k);
+    if (raw == null)
+        return fb;
+    try {
+        return JSON.parse(raw);
+    }
+    catch {
+        return fb;
+    }
+};
+const save = (k, v) => { store.set(k, JSON.stringify(v)); };
+/* ───────────────────────── helpers ───────────────────────── */
+const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3);
+const pad = (n) => String(n).padStart(2, "0");
+const todayKey = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+const monthKey = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+};
+const buzz = (p) => { try {
+    navigator.vibrate && navigator.vibrate(p);
+}
+catch { } };
+const eur = (n) => "€" + (Math.round(n * 100) / 100).toLocaleString("nl-NL", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const PL_DAYS = ["niedziela", "poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota"];
+const PL_MON = ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca", "sierpnia", "września", "października", "listopada", "grudnia"];
+const prettyDate = () => {
+    const d = new Date();
+    return `${PL_DAYS[d.getDay()]}, ${d.getDate()} ${PL_MON[d.getMonth()]}`;
+};
+const dayOfYear = () => {
+    const d = new Date();
+    return Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000);
+};
+/* ───────────────────────── seed data (from your two Excel files) ───────────────────────── */
+const SEED_HABITS = [
+    { id: "h_wake", name: "Stała pora pobudki", hint: "±15 min, każdy dzień", core: true, icon: "sun" },
+    { id: "h_cold", name: "Zimny prysznic", hint: "min. 30 sek", core: true, icon: "zap" },
+    { id: "h_move", name: "Trening / ruch", hint: "choćby 10 min — nigdy zero", core: true, icon: "dumbbell" },
+    { id: "h_deep", name: "Deep Work", hint: "min. 1h skupienia", core: true, icon: "target" },
+    { id: "h_review", name: "Wieczorny review", hint: "3 rzeczy, które zrobiłeś", core: true, icon: "moon" },
+    { id: "h_nico", name: "Dzień bez nikotyny", hint: "priorytet #1 — sabotuje wszystko", core: true, icon: "flame" },
+];
+const SEED_SUPPS = [
+    { id: "s_d3", name: "Witamina D3 + K2", dose: "5000 IU / 200 mcg", when: "Rano" },
+    { id: "s_boron", name: "Boron", dose: "10 mg", when: "Rano" },
+    { id: "s_tongkat", name: "Tongkat Ali", dose: "400 mg", when: "Rano" },
+    { id: "s_omega", name: "Omega-3 (EPA+DHA)", dose: "2–3 g", when: "Rano" },
+    { id: "s_crea", name: "Kreatyna monohydrat", dose: "5–10 g", when: "Po treningu" },
+    { id: "s_zinc", name: "Cynk pikolinian", dose: "25 mg", when: "Wieczór" },
+    { id: "s_mag", name: "Magnez (glicynian)", dose: "400 mg", when: "Wieczór" },
+    { id: "s_ashwa", name: "Ashwagandha KSM-66", dose: "600 mg", when: "Wieczór" },
+];
+const WORKOUTS = [
+    {
+        id: "g_a", group: "Siłownia", name: "Dzień A — Nogi + Core",
+        ex: [
+            { id: "ga1", n: "Przysiad ze sztangą", s: 5, r: "5 · 80–85%", rest: 270 },
+            { id: "ga2", n: "Romanian Deadlift", s: 4, r: "6–8", rest: 180 },
+            { id: "ga3", n: "Farmer Walk", s: 3, r: "40 m", rest: 120 },
+            { id: "ga4", n: "Hollow Body Hold", s: 3, r: "30–45 s", rest: 90 },
+            { id: "ga5", n: "20-Rep Squat (1×/tydz)", s: 1, r: "20 · oddech", rest: 0 },
+        ],
+    },
+    {
+        id: "g_b", group: "Siłownia", name: "Dzień B — Pchanie (Push)",
+        ex: [
+            { id: "gb1", n: "Wyciskanie żołnierskie (OHP)", s: 5, r: "5 · 80%", rest: 240 },
+            { id: "gb2", n: "Dipy z obciążeniem", s: 4, r: "6–8", rest: 180 },
+            { id: "gb3", n: "Wyciskanie na ławce", s: 4, r: "6", rest: 180 },
+            { id: "gb4", n: "Face Pull (taśma)", s: 4, r: "15–20", rest: 90 },
+            { id: "gb5", n: "Farmer Walk", s: 3, r: "40 m", rest: 120 },
+        ],
+    },
+    {
+        id: "g_c", group: "Siłownia", name: "Dzień C — Ciągnięcie (Pull)",
+        ex: [
+            { id: "gc1", n: "Martwy ciąg konwencjonalny", s: 5, r: "3–5 · 85–90%", rest: 330 },
+            { id: "gc2", n: "Podciąganie (obciążenie)", s: 5, r: "4–6", rest: 210 },
+            { id: "gc3", n: "Wiosłowanie ze sztangą", s: 4, r: "6–8", rest: 180 },
+            { id: "gc4", n: "Kettlebell Swing", s: 4, r: "10–15", rest: 120 },
+            { id: "gc5", n: "Farmer Walk", s: 3, r: "40 m", rest: 120 },
+        ],
+    },
+    {
+        id: "h_1", group: "Dom (kalistenika)", name: "Dzień 1 — Push",
+        ex: [
+            { id: "h11", n: "Pompki Tysona (dive bomber)", s: 4, r: "15–20", rest: 75 },
+            { id: "h12", n: "Pompki klasyczne (tempo)", s: 4, r: "do upadku −1", rest: 75 },
+            { id: "h13", n: "Deklinacja → klasyczne (drop)", s: 3, r: "max + max", rest: 90 },
+            { id: "h14", n: "Pike push-ups (barki)", s: 4, r: "8–12", rest: 75 },
+            { id: "h15", n: "Pompki diamentowe 1,5", s: 3, r: "max", rest: 75 },
+            { id: "h16", n: "Superset pompa (wąskie + pulsy)", s: 3, r: "30 s + 20 s", rest: 45 },
+        ],
+    },
+    {
+        id: "h_2", group: "Dom (kalistenika)", name: "Dzień 2 — Pull",
+        ex: [
+            { id: "h21", n: "Podciąganie / wiosło pod stołem", s: 4, r: "6–10 / max", rest: 90 },
+            { id: "h22", n: "Rzędy z ręcznikiem na klamce", s: 4, r: "12–15", rest: 60 },
+            { id: "h23", n: "Wiosło jednorącz plecakiem", s: 3, r: "12 / stronę", rest: 60 },
+            { id: "h24", n: "Reverse snow angels + Superman", s: 4, r: "12 + 3×10 s", rest: 60 },
+            { id: "h25", n: "Biceps: plecak / negatywy", s: 3, r: "12–15 / max", rest: 60 },
+        ],
+    },
+    {
+        id: "h_3", group: "Dom (kalistenika)", name: "Dzień 3 — Nogi",
+        ex: [
+            { id: "h31", n: "Przysiady bułgarskie (tempo)", s: 4, r: "10–12 / nogę", rest: 75 },
+            { id: "h32", n: "Pistol / przysiad jednonóż", s: 3, r: "6–8 / nogę", rest: 90 },
+            { id: "h33", n: "Wykroki chodzone", s: 3, r: "12 / nogę", rest: 60 },
+            { id: "h34", n: "Mostek biodrowy jednonóż", s: 4, r: "15–20 / nogę", rest: 45 },
+            { id: "h35", n: "Wspięcia na palce jednonóż", s: 4, r: "15–20 / nogę", rest: 45 },
+            { id: "h36", n: "Wall sit (finisher)", s: 3, r: "max czas", rest: 60 },
+        ],
+    },
+    {
+        id: "h_4", group: "Dom (kalistenika)", name: "Dzień 4 — Ramiona + Core",
+        ex: [
+            { id: "h41", n: "Pompki Tysona (objętość)", s: 4, r: "20–25", rest: 60 },
+            { id: "h42", n: "Superset triceps (diamond + dipy)", s: 4, r: "max + max", rest: 75 },
+            { id: "h43", n: "Dipy na krzesłach", s: 3, r: "8–12", rest: 75 },
+            { id: "h44", n: "Uginanie bicepsa z plecakiem", s: 4, r: "12–15", rest: 60 },
+            { id: "h45", n: "Stanie na rękach / pike", s: 3, r: "30–45 s / 8–12", rest: 75 },
+            { id: "h46", n: "Obwód CORE (3 rundy)", s: 3, r: "obwód", rest: 45 },
+            { id: "h47", n: "Finisher: 100 pompek na czas", s: 1, r: "100 łącznie", rest: 0 },
+        ],
+    },
+];
+const SEED_TASKS = {
+    lists: [
+        { id: "l_inbox", name: "Dziś", color: "#22c55e" },
+        { id: "l_d2d", name: "Biznes D2D (urlop)", color: "#f5b53d" },
+        { id: "l_sales", name: "Sprzedaż & Marka", color: "#3b82f6" },
+        { id: "l_health", name: "Zdrowie & Looksmaxxing", color: "#a78bfa" },
+    ],
+    items: [
+        { id: uid(), list: "l_d2d", title: "Zarejestruj KvK (kvk.nl)", done: false, prio: 3 },
+        { id: uid(), list: "l_d2d", title: "Otwórz konto biznesowe (Bunq / ING)", done: false, prio: 3 },
+        { id: uid(), list: "l_d2d", title: "Kup / wynajmij furgonetkę", done: false, prio: 2 },
+        { id: uid(), list: "l_d2d", title: "Zamów 1000 flyerów", done: false, prio: 2 },
+        { id: uid(), list: "l_d2d", title: "Roznieś flyery — 3h/dzień", done: false, prio: 1 },
+        { id: uid(), list: "l_d2d", title: "Ogłoszenia: Facebook + Nextdoor", done: false, prio: 1 },
+        { id: uid(), list: "l_d2d", title: "Zbierz 5 opinii w Google", done: false, prio: 2 },
+        { id: uid(), list: "l_sales", title: "Przeczytaj: Cialdini — Wywieranie wpływu", done: false, prio: 3 },
+        { id: uid(), list: "l_sales", title: "Przeczytaj: Voss — Never Split the Difference", done: false, prio: 3 },
+        { id: uid(), list: "l_sales", title: "Przeczytaj: SPIN Selling", done: false, prio: 2 },
+        { id: uid(), list: "l_sales", title: "Opublikuj pierwsze 8–12 postów (LinkedIn)", done: false, prio: 2 },
+        { id: uid(), list: "l_sales", title: "Zbuduj prosty lead magnet", done: false, prio: 1 },
+        { id: uid(), list: "l_health", title: "Zrób badania hormonalne (pakiet podstawowy)", done: false, prio: 3 },
+        { id: uid(), list: "l_health", title: "Kup filtr węglowy do wody", done: false, prio: 2 },
+        { id: uid(), list: "l_health", title: "Mouth tape na noc (oddychanie nosem)", done: false, prio: 1 },
+        { id: uid(), list: "l_health", title: "Mewing — nawyk 24/7", done: false, prio: 1 },
+    ],
+};
+const SEED_FINANCE = {
+    month: monthKey(),
+    capital: 2600,
+    d2dGoal: 2000,
+    cats: [
+        { id: "c_rent", name: "Mieszkanie / czynsz", pct: 38, color: "#3b82f6" },
+        { id: "c_food", name: "Jedzenie & suplementy", pct: 19, color: "#22c55e" },
+        { id: "c_trans", name: "Transport (paliwo / van)", pct: 10, color: "#f59e0b" },
+        { id: "c_biz", name: "Biznes D2D (flyery, sprzęt)", pct: 11, color: "#f5b53d" },
+        { id: "c_fun", name: "Rozrywka / inne", pct: 6, color: "#a78bfa" },
+        { id: "c_save", name: "Oszczędności / inwestycje", pct: 16, color: "#10b981" },
+    ],
+    income: [
+        { id: "i_job", name: "Wypłata (praca)" },
+        { id: "i_d2d", name: "Biznes D2D" },
+    ],
+    tx: [],
+    vault: 0,
+    vaultGoal: 5000,
+    vaultRoundup: 0,
+    roundUp: true,
+    roundTo: 1,
+};
+const CAT_PALETTE = ["#3b82f6", "#22c55e", "#f59e0b", "#f5b53d", "#a78bfa", "#10b981", "#ec4899", "#14b8a6", "#fb7185", "#38bdf8"];
+const SEED_EVENTS = [
+    { id: uid(), date: `${new Date().getFullYear()}-07-05`, title: "Urlop: start biznesu D2D 🚀", note: "KvK, konto, furgonetka, flyery", color: "#f5b53d" },
+    { id: uid(), date: `${new Date().getFullYear()}-07-28`, title: "Koniec urlopu — plan tras", note: "System fakturowania, cel €2000/mies", color: "#3b82f6" },
+];
+const AFFIRM = [
+    "Jestem zdyscyplinowany — robię to, co zaplanowałem.",
+    "Każde powtórzenie buduje moje ciało.",
+    "Dyscyplina = wolność. Przymus teraz = wybór później.",
+    "Żadnego dnia na zero.",
+    "Robię o jeden telefon więcej niż wczoraj.",
+    "Jestem najlepszy w tym, co robię — bo codziennie pracuję.",
+    "Dzisiaj prowadzę swój dzień, nie odwrotnie.",
+];
+const QUOTES = [
+    { t: "Dyscyplina to most między celami a osiągnięciami.", a: "Jim Rohn" },
+    { t: "Nie licz dni — spraw, by dni się liczyły.", a: "Muhammad Ali" },
+    { t: "Sukces to suma małych wysiłków powtarzanych każdego dnia.", a: "Robert Collier" },
+    { t: "Nie marnuj czasu na cudze życie.", a: "Steve Jobs" },
+    { t: "Jesteś tym, co robisz codziennie.", a: "Arystoteles (parafraza)" },
+    { t: "Zrobione jest lepsze niż idealne.", a: "Sheryl Sandberg" },
+    { t: "Działanie pokonuje strach.", a: "—" },
+    { t: "Bądź o 1% lepszy każdego dnia.", a: "James Clear" },
+    { t: "Marzenia bez planu to tylko życzenia.", a: "—" },
+    { t: "Ciężka praca pokonuje talent, gdy talent nie pracuje.", a: "Tim Notke" },
+    { t: "Konsekwencja bije intensywność.", a: "—" },
+    { t: "Komfort jest wrogiem postępu.", a: "—" },
+    { t: "Zwycięzcy robią to, czego przegrani unikają.", a: "—" },
+    { t: "Twoja przyszłość tworzy się dziś.", a: "—" },
+    { t: "Przestań, gdy skończysz — nie gdy jesteś zmęczony.", a: "—" },
+    { t: "Dyscyplina równa się wolność.", a: "Jocko Willink" },
+    { t: "Bądź tak dobry, by nie dało się Cię zignorować.", a: "Steve Martin" },
+    { t: "Energia i wytrwałość pokonują wszystko.", a: "Benjamin Franklin" },
+    { t: "Nawyki to procent składany Twojego rozwoju.", a: "James Clear" },
+    { t: "Albo rządzisz dniem, albo dzień rządzi Tobą.", a: "—" },
+    { t: "Odwaga to działanie mimo strachu.", a: "—" },
+    { t: "Jeden telefon więcej. Jedna seria więcej.", a: "—" },
+    { t: "Wstawaj wcześnie — wygrywaj poranek, wygrasz dzień.", a: "—" },
+    { t: "Trudne drogi prowadzą do pięknych miejsc.", a: "—" },
+    { t: "Najpierw zarządź sobą, potem światem.", a: "—" },
+    { t: "Małe kroki każdego dnia to wielkie zmiany w roku.", a: "—" },
+    { t: "Najlepszy moment, by zacząć, jest teraz.", a: "—" },
+    { t: "Stań się człowiekiem, którym chcesz być — przez działanie.", a: "—" },
+];
+const SAVING_TIPS = [
+    { t: "Najpierw zapłać sobie — odkładaj, zanim cokolwiek wydasz.", a: "Zasada „pay yourself first”" },
+    { t: "Nie oszczędzaj reszty po wydatkach — wydawaj resztę po oszczędzaniu.", a: "Warren Buffett" },
+    { t: "Cena to to, co płacisz. Wartość to, co dostajesz.", a: "Warren Buffett" },
+    { t: "Żyj poniżej swoich możliwości — zawsze.", a: "Zasada bogatych" },
+    { t: "Zautomatyzuj oszczędzanie, by działo się bez decyzji.", a: "David Bach" },
+    { t: "Dochód rośnie? Wydatki nie muszą. Unikaj inflacji stylu życia.", a: "Zasada FIRE" },
+    { t: "Procent składany to ósmy cud świata.", a: "przypisywane Einsteinowi" },
+    { t: "Zbuduj poduszkę na 3–6 miesięcy wydatków.", a: "Podstawa finansów" },
+    { t: "Reguła 50/30/20: potrzeby, zachcianki, oszczędności.", a: "Elizabeth Warren" },
+    { t: "Inwestuj tylko w to, co rozumiesz.", a: "Warren Buffett" },
+    { t: "Bogactwo to nie zarobki, lecz to, czego nie wydajesz.", a: "Zasada bogatych" },
+    { t: "Gotówka daje okazje, gdy inni ich nie mają.", a: "Inwestorzy" },
+    { t: "Kupuj aktywa, nie pasywa.", a: "Robert Kiyosaki" },
+    { t: "Budżet to mówienie pieniądzom, dokąd mają iść.", a: "Dave Ramsey" },
+    { t: "Każde euro odłożone dziś pracuje na Ciebie jutro.", a: "Efekt kuli śnieżnej" },
+];
+const ICONS = { sun: Sun, zap: Zap, dumbbell: Dumbbell, target: Target, moon: Moon, flame: Flame, coffee: Coffee };
+/* ───────────────────────── small UI atoms ───────────────────────── */
+function Ring({ pct, size = 116, stroke = 10, color = "var(--green)", track = "rgba(255,255,255,.08)", children, glow }) {
+    const r = (size - stroke) / 2;
+    const c = 2 * Math.PI * r;
+    const off = c - (Math.min(100, Math.max(0, pct)) / 100) * c;
+    return (React.createElement("div", { style: { position: "relative", width: size, height: size } },
+        React.createElement("svg", { width: size, height: size, style: { transform: "rotate(-90deg)", filter: glow ? `drop-shadow(0 0 10px ${color})` : "none" } },
+            React.createElement("circle", { cx: size / 2, cy: size / 2, r: r, fill: "none", stroke: track, strokeWidth: stroke }),
+            React.createElement("circle", { cx: size / 2, cy: size / 2, r: r, fill: "none", stroke: color, strokeWidth: stroke, strokeDasharray: c, strokeDashoffset: off, strokeLinecap: "round", style: { transition: "stroke-dashoffset .8s cubic-bezier(.2,.8,.2,1)" } })),
+        React.createElement("div", { style: { position: "absolute", inset: 0, display: "grid", placeItems: "center", textAlign: "center" } }, children)));
+}
+function Donut({ data, total, size = 96, stroke = 16 }) {
+    const r = (size - stroke) / 2;
+    const c = 2 * Math.PI * r;
+    let acc = 0;
+    const sum = data.reduce((a, d) => a + d.value, 0) || 1;
+    return (React.createElement("div", { style: { position: "relative", width: size, height: size, flexShrink: 0 } },
+        React.createElement("svg", { width: size, height: size, style: { transform: "rotate(-90deg)" } },
+            React.createElement("circle", { cx: size / 2, cy: size / 2, r: r, fill: "none", stroke: "rgba(255,255,255,.06)", strokeWidth: stroke }),
+            data.map((d, i) => {
+                const frac = d.value / sum;
+                const dash = frac * c;
+                const seg = (React.createElement("circle", { key: i, cx: size / 2, cy: size / 2, r: r, fill: "none", stroke: d.color, strokeWidth: stroke, strokeDasharray: `${dash} ${c - dash}`, strokeDashoffset: -acc, style: { transition: "stroke-dasharray .6s ease" } }));
+                acc += dash;
+                return seg;
+            })),
+        React.createElement("div", { style: { position: "absolute", inset: 0, display: "grid", placeItems: "center", textAlign: "center" } },
+            React.createElement("div", null,
+                React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 15, letterSpacing: "-.02em" } }, eur(total)),
+                React.createElement("div", { style: { fontSize: 9, color: "var(--faint)" } }, "wydane")))));
+}
+function Bar({ pct, color = "var(--green)", h = 8, bg = "rgba(255,255,255,.07)" }) {
+    return (React.createElement("div", { style: { width: "100%", height: h, borderRadius: 99, background: bg, overflow: "hidden" } },
+        React.createElement("div", { style: { width: `${Math.min(100, Math.max(0, pct))}%`, height: "100%", borderRadius: 99, background: color, transition: "width .7s cubic-bezier(.2,.8,.2,1)" } })));
+}
+function Card({ children, style, onClick, pad = 16 }) {
+    return (React.createElement("div", { onClick: onClick, style: {
+            background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 20,
+            padding: pad, boxShadow: "0 1px 0 rgba(255,255,255,.03) inset, 0 10px 30px -18px rgba(0,0,0,.8)",
+            ...style,
+        } }, children));
+}
+function Sheet({ open, onClose, title, children }) {
+    if (!open)
+        return null;
+    return (React.createElement("div", { onClick: onClose, style: {
+            position: "fixed", inset: 0, zIndex: 60, background: "rgba(0,0,0,.55)",
+            backdropFilter: "blur(3px)", display: "flex", alignItems: "flex-end", justifyContent: "center",
+            animation: "fade .2s ease",
+        } },
+        React.createElement("div", { onClick: (e) => e.stopPropagation(), style: {
+                width: "100%", maxWidth: 460, background: "var(--bg2)", borderTopLeftRadius: 26, borderTopRightRadius: 26,
+                border: "1px solid var(--line)", borderBottom: "none", padding: "10px 18px 26px",
+                animation: "slideUp .28s cubic-bezier(.2,.9,.2,1)", maxHeight: "85vh", overflowY: "auto",
+            } },
+            React.createElement("div", { style: { width: 40, height: 4, borderRadius: 99, background: "var(--line2)", margin: "6px auto 14px" } }),
+            React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 } },
+                React.createElement("h3", { style: { margin: 0, fontFamily: "var(--display)", fontSize: 20, fontWeight: 800, letterSpacing: "-.02em" } }, title),
+                React.createElement("button", { onClick: onClose, style: iconBtn },
+                    React.createElement(X, { size: 18 }))),
+            children)));
+}
+const iconBtn = {
+    width: 38, height: 38, borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface2)",
+    color: "var(--text)", display: "grid", placeItems: "center", cursor: "pointer", flexShrink: 0,
+};
+const inputStyle = {
+    width: "100%", padding: "13px 14px", borderRadius: 13, border: "1px solid var(--line2)",
+    background: "var(--surface)", color: "var(--text)", fontSize: 15, fontFamily: "var(--body)", outline: "none", boxSizing: "border-box",
+};
+const btnPrimary = {
+    width: "100%", padding: "14px", borderRadius: 14, border: "none", cursor: "pointer",
+    background: "linear-gradient(135deg, var(--green), #15a34a)", color: "#04130a", fontWeight: 800,
+    fontSize: 15.5, fontFamily: "var(--display)", letterSpacing: "-.01em", marginTop: 6,
+    boxShadow: "0 8px 20px -8px var(--green-glow)",
+};
+const label = { fontSize: 12.5, color: "var(--muted)", fontWeight: 600, margin: "12px 0 6px", display: "block", letterSpacing: ".01em" };
+const sectionTitle = { fontFamily: "var(--display)", fontSize: 13, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".08em", margin: "22px 4px 12px" };
+const prioColor = (p) => (p === 3 ? "var(--red)" : p === 2 ? "var(--amber)" : p === 1 ? "var(--blue)" : "var(--faint)");
+const prioLabel = (p) => (p === 3 ? "Wysoki" : p === 2 ? "Średni" : p === 1 ? "Niski" : "—");
+function Toggle({ on, onChange }) {
+    return (React.createElement("button", { onClick: () => onChange(!on), style: {
+            width: 46, height: 27, borderRadius: 99, border: "none", cursor: "pointer", padding: 3, flexShrink: 0,
+            background: on ? "var(--green)" : "var(--surface2)", transition: "background .2s", position: "relative",
+            boxShadow: on ? "0 0 0 1px var(--green), 0 4px 12px -4px var(--green-glow)" : "0 0 0 1px var(--line2)",
+        } },
+        React.createElement("span", { style: { display: "block", width: 21, height: 21, borderRadius: 99, background: on ? "#04130a" : "var(--muted)", transform: on ? "translateX(19px)" : "translateX(0)", transition: "transform .2s cubic-bezier(.2,1.2,.4,1)" } })));
+}
+function Toast({ toast, onClose, onGo }) {
+    useEffect(() => {
+        if (!toast)
+            return;
+        const t = setTimeout(onClose, 9000);
+        return () => clearTimeout(t);
+    }, [toast, onClose]);
+    if (!toast)
+        return null;
+    const Ic = toast.icon === "piggy" ? PiggyBank : Sun;
+    return (React.createElement("div", { onClick: onGo, style: {
+            position: "fixed", top: "max(14px, env(safe-area-inset-top))", left: "50%", transform: "translateX(-50%)",
+            zIndex: 80, width: "calc(100% - 28px)", maxWidth: 432, cursor: "pointer",
+            background: "var(--surface2)", border: `1px solid ${toast.color}`, borderRadius: 16, padding: "13px 14px",
+            display: "flex", gap: 12, alignItems: "flex-start", boxShadow: "0 18px 40px -12px rgba(0,0,0,.7)",
+            animation: "dropIn .35s cubic-bezier(.2,1,.3,1)",
+        } },
+        React.createElement("div", { style: { width: 36, height: 36, borderRadius: 10, background: `${toast.color}22`, display: "grid", placeItems: "center", flexShrink: 0 } },
+            React.createElement(Ic, { size: 19, color: toast.color })),
+        React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+            React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 14.5, letterSpacing: "-.01em" } }, toast.title),
+            React.createElement("div", { style: { fontSize: 13, color: "var(--muted)", marginTop: 2, lineHeight: 1.4 } }, toast.msg)),
+        React.createElement("button", { onClick: (e) => { e.stopPropagation(); onClose(); }, style: { ...iconBtn, width: 28, height: 28, border: "none", background: "transparent", color: "var(--faint)" } },
+            React.createElement(X, { size: 16 }))));
+}
+/* ───────────────────────── main app ───────────────────────── */
+function App() {
+    const [ready, setReady] = useState(false);
+    const [tab, setTab] = useState("home");
+    const [profile, setProfile] = useState({ name: "", weight: 78, start: 78, goal: 88, height: 198, workoutGoal: 12, reminders: { affirm: { on: false, time: "08:00" }, save: { on: false, time: "20:00" } } });
+    const [habits, setHabits] = useState(SEED_HABITS);
+    const [supps, setSupps] = useState(SEED_SUPPS);
+    const [daily, setDaily] = useState({});
+    const [tasks, setTasks] = useState(SEED_TASKS);
+    const [finance, setFinance] = useState(SEED_FINANCE);
+    const [events, setEvents] = useState(SEED_EVENTS);
+    const [diet, setDiet] = useState(SEED_DIET);
+    const [shopping, setShopping] = useState(SEED_SHOPPING);
+    const tk = todayKey();
+    const day = daily[tk] || { habits: {}, supps: {}, workoutDone: false, workoutId: null, sets: {} };
+    /* load once */
+    useEffect(() => {
+        (async () => {
+            const [p, h, s, d, t, f, ev] = await Promise.all([
+                load("mp_profile_v1", null), load("mp_habits_v1", null), load("mp_supps_v1", null),
+                load("mp_daily_v1", null), load("mp_tasks_v1", null), load("mp_finance_v1", null),
+                load("mp_events_v1", null),
+            ]);
+            const [di, sh] = await Promise.all([load("mp_diet_v1", null), load("mp_shopping_v1", null)]);
+            if (p) {
+                const dp = { name: "", weight: 78, start: 78, goal: 88, height: 198, workoutGoal: 12, reminders: { affirm: { on: false, time: "08:00" }, save: { on: false, time: "20:00" } } };
+                const pr = p.reminders || {};
+                setProfile({
+                    ...dp, ...p,
+                    reminders: {
+                        affirm: { ...dp.reminders.affirm, ...(pr.affirm || {}) },
+                        save: { ...dp.reminders.save, ...(pr.save || {}) },
+                    },
+                });
+            }
+            if (h)
+                setHabits(h);
+            if (s)
+                setSupps(s);
+            if (d)
+                setDaily(d);
+            if (t)
+                setTasks(t);
+            if (ev)
+                setEvents(ev);
+            if (di)
+                setDiet({ ...SEED_DIET, ...di });
+            if (sh)
+                setShopping({ stores: sh.stores && sh.stores.length ? sh.stores : SEED_SHOPPING.stores, items: sh.items || [] });
+            if (f) {
+                let next = { vault: 0, vaultGoal: 5000, vaultRoundup: 0, roundUp: true, roundTo: 1, ...f, month: monthKey() };
+                if (!next.income)
+                    next.income = SEED_FINANCE.income;
+                // migrate old € limits -> capital + % model
+                if (next.capital == null) {
+                    const cap = (next.cats || []).reduce((a, c) => a + (c.limit || 0), 0) || 2600;
+                    next.capital = cap;
+                    next.cats = (next.cats || []).map((c) => ({
+                        id: c.id, name: c.name, color: c.color,
+                        pct: c.pct != null ? c.pct : (cap ? Math.round((c.limit || 0) / cap * 100) : 0),
+                    }));
+                }
+                setFinance(next);
+            }
+            setReady(true);
+        })();
+    }, []);
+    /* persist slices */
+    useEffect(() => { if (ready)
+        save("mp_profile_v1", profile); }, [profile, ready]);
+    useEffect(() => { if (ready)
+        save("mp_habits_v1", habits); }, [habits, ready]);
+    useEffect(() => { if (ready)
+        save("mp_supps_v1", supps); }, [supps, ready]);
+    useEffect(() => { if (ready)
+        save("mp_daily_v1", daily); }, [daily, ready]);
+    useEffect(() => { if (ready)
+        save("mp_tasks_v1", tasks); }, [tasks, ready]);
+    useEffect(() => { if (ready)
+        save("mp_finance_v1", finance); }, [finance, ready]);
+    useEffect(() => { if (ready)
+        save("mp_events_v1", events); }, [events, ready]);
+    useEffect(() => { if (ready)
+        save("mp_diet_v1", diet); }, [diet, ready]);
+    useEffect(() => { if (ready)
+        save("mp_shopping_v1", shopping); }, [shopping, ready]);
+    /* mutate today's record */
+    const setDay = useCallback((patch) => {
+        setDaily((prev) => {
+            const cur = prev[tk] || { habits: {}, supps: {}, workoutDone: false, workoutId: null, sets: {} };
+            const next = typeof patch === "function" ? patch(cur) : { ...cur, ...patch };
+            return { ...prev, [tk]: next };
+        });
+    }, [tk]);
+    const toggleHabit = (id) => { buzz(8); setDay((c) => ({ ...c, habits: { ...c.habits, [id]: !c.habits[id] } })); };
+    const toggleSupp = (id) => { buzz(8); setDay((c) => ({ ...c, supps: { ...c.supps, [id]: !c.supps[id] } })); };
+    /* ── rest timer (lives in App so it survives tab switches) ── */
+    const [timer, setTimer] = useState({ dur: 90, left: 90, running: false, label: "Przerwa" });
+    const audioRef = useRef(null);
+    const beep = () => {
+        try {
+            if (!audioRef.current)
+                audioRef.current = new (window.AudioContext || window.webkitAudioContext)();
+            const ctx = audioRef.current;
+            [0, 0.18].forEach((t, i) => {
+                const o = ctx.createOscillator(), g = ctx.createGain();
+                o.frequency.value = i === 0 ? 880 : 1175;
+                o.type = "sine";
+                o.connect(g);
+                g.connect(ctx.destination);
+                g.gain.setValueAtTime(0.0001, ctx.currentTime + t);
+                g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + t + 0.02);
+                g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.16);
+                o.start(ctx.currentTime + t);
+                o.stop(ctx.currentTime + t + 0.18);
+            });
+        }
+        catch { }
+    };
+    useEffect(() => {
+        if (!timer.running)
+            return;
+        const iv = setInterval(() => {
+            setTimer((t) => {
+                if (t.left <= 1) {
+                    beep();
+                    buzz([120, 60, 120]);
+                    return { ...t, left: 0, running: false };
+                }
+                return { ...t, left: t.left - 1 };
+            });
+        }, 1000);
+        return () => clearInterval(iv);
+    }, [timer.running]);
+    const startTimer = (sec, label) => { var _a, _b; if (audioRef.current)
+        (_b = (_a = audioRef.current).resume) === null || _b === void 0 ? void 0 : _b.call(_a); setTimer({ dur: sec, left: sec, running: true, label: label || "Przerwa" }); };
+    /* ── reminders (affirmation + savings) ── */
+    const [toast, setToast] = useState(null);
+    const notify = (title, body) => {
+        try {
+            if (typeof Notification !== "undefined" && Notification.permission === "granted")
+                new Notification(title, { body });
+        }
+        catch { }
+        buzz([60, 40, 60]);
+    };
+    useEffect(() => {
+        if (!ready)
+            return;
+        const check = () => {
+            const rem = profile.reminders || {};
+            const n = new Date();
+            const hhmm = `${pad(n.getHours())}:${pad(n.getMinutes())}`;
+            const recRem = (daily[tk] && daily[tk].rem) || {};
+            const due = (r) => r && r.on && r.time && hhmm >= r.time;
+            if (due(rem.affirm) && !recRem.affirm) {
+                const a = AFFIRM[n.getDate() % AFFIRM.length];
+                setToast({ icon: "sun", title: "Afirmacja dnia", msg: a, color: "var(--gold)" });
+                notify("Afirmacja dnia", a);
+                setDay((c) => ({ ...c, rem: { ...(c.rem || {}), affirm: true } }));
+            }
+            else if (due(rem.save) && !recRem.save) {
+                setToast({ icon: "piggy", title: "Czas odłożyć 💰", msg: "Dorzuć dziś coś do skarbonki — każde euro się liczy.", color: "var(--green)" });
+                notify("Czas odłożyć", "Dorzuć dziś coś do skarbonki.");
+                setDay((c) => ({ ...c, rem: { ...(c.rem || {}), save: true } }));
+            }
+        };
+        check();
+        const iv = setInterval(check, 20000);
+        return () => clearInterval(iv);
+    }, [ready, profile.reminders, daily, tk, setDay]);
+    if (!ready) {
+        return (React.createElement("div", { style: rootBase },
+            React.createElement("style", null, CSS),
+            React.createElement("div", { className: "mp-root", style: { minHeight: "100vh", display: "grid", placeItems: "center" } },
+                React.createElement("div", { style: { textAlign: "center", animation: "fade .4s ease" } },
+                    React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 26, letterSpacing: "-.03em" } }, "MASTER PLAN"),
+                    React.createElement("div", { style: { color: "var(--muted)", marginTop: 8, fontSize: 13 } }, "\u0141adowanie\u2026")))));
+    }
+    const NAV = [
+        { id: "home", label: "Dziś", icon: Sun },
+        { id: "cal", label: "Kalendarz", icon: CalendarDays },
+        { id: "tasks", label: "Zadania", icon: ListTodo },
+        { id: "train", label: "Trening", icon: Dumbbell },
+        { id: "diet", label: "Dieta", icon: Apple },
+        { id: "habits", label: "Nawyki", icon: Check },
+        { id: "money", label: "Finanse", icon: Wallet },
+    ];
+    return (React.createElement("div", { style: rootBase },
+        React.createElement("style", null, CSS),
+        React.createElement("div", { className: "mp-root", style: { minHeight: "100vh", maxWidth: 460, margin: "0 auto", position: "relative", paddingBottom: 96 } },
+            React.createElement("div", { className: "grain" }),
+            React.createElement(Toast, { toast: toast, onClose: () => setToast(null), onGo: () => { if (toast && toast.icon === "piggy")
+                    setTab("money"); setToast(null); } }),
+            React.createElement("div", { key: tab, style: { animation: "fade .25s ease", padding: "0 16px" } },
+                tab === "home" && React.createElement(Home, { profile, setProfile, habits, supps, day, daily, tasks, finance, toggleHabit, setTab }),
+                tab === "cal" && React.createElement(Calendar, { events, setEvents, daily, habits, finance, profile, setProfile }),
+                tab === "tasks" && React.createElement(Tasks, { tasks, setTasks }),
+                tab === "train" && React.createElement(Train, { day, setDay, timer, setTimer, startTimer }),
+                tab === "diet" && React.createElement(Diet, { diet, setDiet, shopping, setShopping, day, setDay, profile, supps }),
+                tab === "habits" && React.createElement(Habits, { habits, setHabits, supps, setSupps, day, toggleHabit, toggleSupp }),
+                tab === "money" && React.createElement(Money, { finance, setFinance })),
+            timer.running && tab !== "train" && (React.createElement("div", { onClick: () => setTab("train"), style: {
+                    position: "fixed", bottom: 84, left: "50%", transform: "translateX(-50%)", zIndex: 40,
+                    display: "flex", alignItems: "center", gap: 10, padding: "9px 16px", borderRadius: 99,
+                    background: "var(--surface2)", border: "1px solid var(--green)", cursor: "pointer",
+                    boxShadow: "0 10px 30px -10px var(--green-glow)", animation: "fade .3s ease",
+                } },
+                React.createElement(TimerIcon, { size: 16, color: "var(--green2)" }),
+                React.createElement("span", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 15, fontVariantNumeric: "tabular-nums" } },
+                    pad(Math.floor(timer.left / 60)),
+                    ":",
+                    pad(timer.left % 60)),
+                React.createElement("span", { style: { fontSize: 12, color: "var(--muted)" } }, timer.label))),
+            React.createElement("nav", { style: {
+                    position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 50, maxWidth: 460, margin: "0 auto",
+                    background: "rgba(10,12,17,.82)", backdropFilter: "blur(16px)", borderTop: "1px solid var(--line)",
+                    display: "grid", gridTemplateColumns: "repeat(7,1fr)", padding: "8px 0 calc(8px + env(safe-area-inset-bottom))",
+                } }, NAV.map((n) => {
+                const Ic = n.icon;
+                const on = tab === n.id;
+                return (React.createElement("button", { key: n.id, onClick: () => { buzz(5); setTab(n.id); }, style: {
+                        background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column",
+                        alignItems: "center", gap: 4, padding: "6px 0", color: on ? "var(--green2)" : "var(--faint)",
+                        transition: "color .2s", overflow: "hidden",
+                    } },
+                    React.createElement(Ic, { size: 19, strokeWidth: on ? 2.5 : 2 }),
+                    React.createElement("span", { style: { fontSize: 9, fontWeight: on ? 700 : 500, whiteSpace: "nowrap" } }, n.label)));
+            })))));
+}
+/* ───────────────────────── HOME / DASHBOARD ───────────────────────── */
+function Home({ profile, setProfile, habits, supps, day, daily, tasks, finance, toggleHabit, setTab }) {
+    const [wOpen, setWOpen] = useState(false);
+    const [wVal, setWVal] = useState(profile.weight);
+    const [setOpen, setSetOpen] = useState(false);
+    const [notifState, setNotifState] = useState(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
+    const rem = profile.reminders || { affirm: { on: false, time: "08:00" }, save: { on: false, time: "20:00" } };
+    const setRem = (key, patch) => setProfile({ ...profile, reminders: { ...rem, [key]: { ...rem[key], ...patch } } });
+    const askNotif = async () => {
+        try {
+            const r = await Notification.requestPermission();
+            setNotifState(r);
+        }
+        catch {
+            setNotifState("denied");
+        }
+    };
+    const coreHabits = habits.filter((h) => h.core);
+    const habitsDone = habits.filter((h) => day.habits[h.id]).length;
+    const suppsDone = supps.filter((s) => day.supps[s.id]).length;
+    const totalDaily = habits.length + supps.length;
+    const doneDaily = habitsDone + suppsDone;
+    const dayPct = totalDaily ? Math.round((doneDaily / totalDaily) * 100) : 0;
+    const allCore = coreHabits.length > 0 && coreHabits.every((h) => day.habits[h.id]);
+    /* consecutive-day streak from daily log (all core habits done) */
+    const streak = useMemo(() => {
+        const complete = (rec) => rec && rec.habits && coreHabits.length > 0 && coreHabits.every((h) => rec.habits[h.id]);
+        const key = (x) => `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}`;
+        let s = 0;
+        const cur = new Date();
+        // don't punish before the day ends: if today isn't complete, count from yesterday
+        if (!complete(daily[key(cur)]))
+            cur.setDate(cur.getDate() - 1);
+        for (let i = 0; i < 400; i++) {
+            if (complete(daily[key(cur)])) {
+                s++;
+                cur.setDate(cur.getDate() - 1);
+            }
+            else
+                break;
+        }
+        return s;
+    }, [daily, coreHabits]);
+    /* finance snapshot */
+    const month = monthKey();
+    const txM = finance.tx.filter((t) => (t.date || "").slice(0, 7) === month);
+    const spent = txM.filter((t) => t.type === "expense").reduce((a, b) => a + b.amount, 0);
+    const totalLimit = (finance.cats || []).reduce((a, c) => a + Math.round((finance.capital || 0) * (c.pct || 0) / 100), 0);
+    const budgetPct = totalLimit ? Math.round((spent / totalLimit) * 100) : 0;
+    const tasksOpen = tasks.items.filter((t) => !t.done).length;
+    const wp = Math.max(0, Math.min(100, ((profile.weight - profile.start) / (profile.goal - profile.start)) * 100));
+    const affirmation = AFFIRM[new Date().getDate() % AFFIRM.length];
+    const quote = QUOTES[(new Date().getFullYear() * 366 + dayOfYear()) % QUOTES.length];
+    return (React.createElement("div", null,
+        React.createElement("header", { style: { paddingTop: 26, display: "flex", justifyContent: "space-between", alignItems: "flex-start" } },
+            React.createElement("div", null,
+                React.createElement("div", { style: { color: "var(--muted)", fontSize: 13, fontWeight: 500, textTransform: "capitalize" } }, prettyDate()),
+                React.createElement("h1", { style: { margin: "3px 0 0", fontFamily: "var(--display)", fontSize: 27, fontWeight: 800, letterSpacing: "-.03em" } }, profile.name ? `Cześć, ${profile.name}` : "Master Plan")),
+            React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+                React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 99, background: "var(--surface)", border: "1px solid var(--line)" } },
+                    React.createElement(Flame, { size: 16, color: allCore ? "var(--gold2)" : "var(--faint)", fill: allCore ? "var(--gold)" : "none" }),
+                    React.createElement("span", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 15 } }, streak)),
+                React.createElement("button", { onClick: () => setSetOpen(true), style: iconBtn, "aria-label": "Ustawienia" },
+                    React.createElement(Settings, { size: 18 })))),
+        React.createElement(Card, { style: { marginTop: 18, display: "flex", alignItems: "center", gap: 18, position: "relative", overflow: "hidden" } },
+            dayPct === 100 && React.createElement("div", { style: { position: "absolute", inset: 0, background: "radial-gradient(120px 80px at 22% 50%, var(--green-glow), transparent)", animation: "pulse 2s ease-in-out infinite" } }),
+            React.createElement(Ring, { pct: dayPct, glow: dayPct === 100, color: dayPct === 100 ? "var(--gold)" : "var(--green)" },
+                React.createElement("div", null,
+                    React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 30, lineHeight: 1, letterSpacing: "-.04em" } },
+                        dayPct,
+                        React.createElement("span", { style: { fontSize: 15 } }, "%")),
+                    React.createElement("div", { style: { fontSize: 10.5, color: "var(--muted)", marginTop: 2 } }, "dzie\u0144"))),
+            React.createElement("div", { style: { flex: 1, zIndex: 1 } },
+                React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 700, fontSize: 16, letterSpacing: "-.02em" } }, dayPct === 100 ? "Dzień zaliczony 🔥" : doneDaily === 0 ? "Zacznij dzień" : "Jedziesz dalej"),
+                React.createElement("div", { style: { color: "var(--muted)", fontSize: 13, margin: "5px 0 12px" } },
+                    doneDaily,
+                    "/",
+                    totalDaily,
+                    " zada\u0144 dnia odhaczonych"),
+                React.createElement(Bar, { pct: dayPct, color: dayPct === 100 ? "var(--gold)" : "var(--green)" }))),
+        React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 } },
+            React.createElement(Stat, { onClick: () => setTab("habits"), icon: Check, tint: "var(--green)", big: `${habitsDone}/${habits.length}`, label: "Nawyki", sub: `${suppsDone}/${supps.length} suplementów` }),
+            React.createElement(Stat, { onClick: () => setTab("train"), icon: Dumbbell, tint: "var(--gold)", big: day.workoutDone ? "✓" : "—", label: "Trening", sub: day.workoutDone ? "Zrobiony" : "Niezrobiony" }),
+            React.createElement(Stat, { onClick: () => setTab("tasks"), icon: ListTodo, tint: "var(--blue)", big: `${tasksOpen}`, label: "Zadania", sub: "do zrobienia" }),
+            React.createElement(Stat, { onClick: () => setTab("money"), icon: Wallet, tint: budgetPct > 100 ? "var(--red)" : "var(--green)", big: `${budgetPct}%`, label: "Bud\u017Cet", sub: `${eur(spent)} / ${eur(totalLimit)}`, barPct: budgetPct })),
+        React.createElement(Card, { style: { marginTop: 12 }, onClick: () => { setWVal(profile.weight); setWOpen(true); } },
+            React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 } },
+                React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 9 } },
+                    React.createElement("div", { style: { width: 34, height: 34, borderRadius: 10, background: "rgba(245,181,61,.12)", display: "grid", placeItems: "center" } },
+                        React.createElement(TrendingUp, { size: 17, color: "var(--gold2)" })),
+                    React.createElement("div", null,
+                        React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 700, fontSize: 15 } }, "Masa cia\u0142a"),
+                        React.createElement("div", { style: { fontSize: 12, color: "var(--muted)" } },
+                            "cel ",
+                            profile.start,
+                            "\u2192",
+                            profile.goal,
+                            " kg \u00B7 ",
+                            profile.height,
+                            " cm"))),
+                React.createElement("div", { style: { textAlign: "right" } },
+                    React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 22, letterSpacing: "-.03em" } },
+                        profile.weight,
+                        React.createElement("span", { style: { fontSize: 12, color: "var(--muted)" } }, " kg")),
+                    React.createElement("div", { style: { fontSize: 11, color: "var(--gold2)" } },
+                        (profile.goal - profile.weight).toFixed(1),
+                        " kg do celu"))),
+            React.createElement(Bar, { pct: wp, color: "linear-gradient(90deg, var(--gold), var(--gold2))" }),
+            React.createElement("div", { style: { fontSize: 11, color: "var(--faint)", marginTop: 7, textAlign: "right" } }, "Dotknij, aby zaktualizowa\u0107 wag\u0119")),
+        React.createElement(Card, { style: { marginTop: 12, background: "linear-gradient(135deg, rgba(34,197,94,.10), rgba(245,181,61,.06))", border: "1px solid rgba(34,197,94,.18)" } },
+            React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 } },
+                React.createElement("div", { style: { fontSize: 11.5, color: "var(--green2)", fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase" } }, "Afirmacja dnia"),
+                React.createElement("button", { onClick: () => setSetOpen(true), style: { background: "none", border: "none", cursor: "pointer", color: rem.affirm.on ? "var(--green2)" : "var(--faint)", display: "flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: 600, padding: 0 } },
+                    React.createElement(Bell, { size: 13, fill: rem.affirm.on ? "var(--green2)" : "none" }),
+                    rem.affirm.on ? rem.affirm.time : "Przypomnij")),
+            React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 700, fontSize: 16.5, lineHeight: 1.35, letterSpacing: "-.01em" } },
+                "\u201E",
+                affirmation,
+                "\"")),
+        React.createElement(Card, { style: { marginTop: 12, position: "relative", overflow: "hidden" } },
+            React.createElement(Quote, { size: 56, style: { position: "absolute", right: -6, top: -10, opacity: .06, color: "var(--gold2)" } }),
+            React.createElement("div", { style: { fontSize: 11.5, color: "var(--gold2)", fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 } },
+                React.createElement(Sparkles, { size: 13 }),
+                " Cytat dnia"),
+            React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 700, fontSize: 16, lineHeight: 1.4, letterSpacing: "-.01em", position: "relative" } },
+                "\u201E",
+                quote.t,
+                "\""),
+            React.createElement("div", { style: { fontSize: 12.5, color: "var(--muted)", marginTop: 8, fontWeight: 600 } },
+                "\u2014 ",
+                quote.a)),
+        React.createElement("div", { style: sectionTitle }, "Nawyki nieznegocjowalne"),
+        React.createElement(Card, { pad: 6 }, coreHabits.map((h, i) => {
+            const on = !!day.habits[h.id];
+            const Ic = ICONS[h.icon] || Check;
+            return (React.createElement("div", { key: h.id, onClick: () => toggleHabit(h.id), style: {
+                    display: "flex", alignItems: "center", gap: 13, padding: "12px 12px", cursor: "pointer",
+                    borderBottom: i < coreHabits.length - 1 ? "1px solid var(--line)" : "none",
+                } },
+                React.createElement(CheckBox, { on: on }),
+                React.createElement(Ic, { size: 17, color: on ? "var(--green2)" : "var(--faint)", style: { flexShrink: 0 } }),
+                React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                    React.createElement("div", { style: { fontSize: 14.5, fontWeight: 600, color: on ? "var(--muted)" : "var(--text)", textDecoration: on ? "line-through" : "none" } }, h.name),
+                    React.createElement("div", { style: { fontSize: 12, color: "var(--faint)" } }, h.hint))));
+        })),
+        React.createElement("div", { style: { height: 8 } }),
+        React.createElement(Sheet, { open: wOpen, onClose: () => setWOpen(false), title: "Zaktualizuj wag\u0119" },
+            React.createElement("label", { style: label }, "Aktualna waga (kg)"),
+            React.createElement("input", { style: inputStyle, type: "number", inputMode: "decimal", value: wVal, onChange: (e) => setWVal(e.target.value), autoFocus: true }),
+            React.createElement("button", { style: btnPrimary, onClick: () => { const v = parseFloat(wVal); if (!isNaN(v))
+                    setProfile({ ...profile, weight: v }); setWOpen(false); } }, "Zapisz")),
+        React.createElement(Sheet, { open: setOpen, onClose: () => setSetOpen(false), title: "Ustawienia" },
+            React.createElement("label", { style: label }, "Twoje imi\u0119"),
+            React.createElement("input", { style: inputStyle, value: profile.name, placeholder: "np. Kuba", onChange: (e) => setProfile({ ...profile, name: e.target.value }) }),
+            React.createElement("div", { style: { ...label, marginTop: 20, marginBottom: 10, fontSize: 13, color: "var(--text)", fontWeight: 700 } }, "Przypomnienia"),
+            React.createElement("div", { style: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 14, padding: 14, marginBottom: 10 } },
+                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+                    React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10 } },
+                        React.createElement(Sun, { size: 18, color: "var(--gold2)" }),
+                        React.createElement("div", { style: { fontSize: 14.5, fontWeight: 600 } }, "Afirmacja dnia")),
+                    React.createElement(Toggle, { on: rem.affirm.on, onChange: (v) => setRem("affirm", { on: v }) })),
+                rem.affirm.on && (React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10, marginTop: 12 } },
+                    React.createElement("span", { style: { fontSize: 13, color: "var(--muted)" } }, "O godzinie"),
+                    React.createElement("input", { type: "time", value: rem.affirm.time, onChange: (e) => setRem("affirm", { time: e.target.value }), style: { ...inputStyle, width: "auto", flex: 1, padding: "10px 12px", colorScheme: "dark" } })))),
+            React.createElement("div", { style: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 14, padding: 14, marginBottom: 10 } },
+                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+                    React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10 } },
+                        React.createElement(PiggyBank, { size: 18, color: "var(--green2)" }),
+                        React.createElement("div", { style: { fontSize: 14.5, fontWeight: 600 } }, "Codzienne oszcz\u0119dzanie")),
+                    React.createElement(Toggle, { on: rem.save.on, onChange: (v) => setRem("save", { on: v }) })),
+                rem.save.on && (React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10, marginTop: 12 } },
+                    React.createElement("span", { style: { fontSize: 13, color: "var(--muted)" } }, "O godzinie"),
+                    React.createElement("input", { type: "time", value: rem.save.time, onChange: (e) => setRem("save", { time: e.target.value }), style: { ...inputStyle, width: "auto", flex: 1, padding: "10px 12px", colorScheme: "dark" } })))),
+            notifState !== "granted" && notifState !== "unsupported" && (React.createElement("button", { onClick: askNotif, style: { ...inputStyle, width: "100%", cursor: "pointer", color: "var(--green2)", fontWeight: 700, textAlign: "center", border: "1px dashed var(--line2)", background: "transparent", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 } },
+                React.createElement(Bell, { size: 15 }),
+                " W\u0142\u0105cz powiadomienia systemowe")),
+            React.createElement("div", { style: { fontSize: 11.5, color: "var(--faint)", marginTop: 10, lineHeight: 1.5 } },
+                notifState === "granted" ? "Powiadomienia systemowe włączone ✓ " : "",
+                "Przypomnienia pojawiaj\u0105 si\u0119 w aplikacji, gdy jest otwarta. Aby mie\u0107 pewno\u015B\u0107, \u017Ce zadzwoni\u0105 nawet przy zamkni\u0119tej apce, ustaw te\u017C alarm w telefonie."),
+            React.createElement("button", { style: btnPrimary, onClick: () => setSetOpen(false) }, "Gotowe"))));
+}
+function Stat({ icon: Ic, tint, big, label, sub, onClick, barPct }) {
+    return (React.createElement(Card, { onClick: onClick, pad: 14, style: { cursor: "pointer" } },
+        React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start" } },
+            React.createElement("div", { style: { width: 32, height: 32, borderRadius: 9, background: "rgba(255,255,255,.05)", display: "grid", placeItems: "center" } },
+                React.createElement(Ic, { size: 16, color: tint })),
+            React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 22, letterSpacing: "-.03em", color: tint } }, big)),
+        React.createElement("div", { style: { fontSize: 13.5, fontWeight: 700, marginTop: 9 } }, label),
+        React.createElement("div", { style: { fontSize: 11.5, color: "var(--muted)", marginTop: 1 } }, sub),
+        barPct != null && React.createElement("div", { style: { marginTop: 9 } },
+            React.createElement(Bar, { pct: barPct, color: barPct > 100 ? "var(--red)" : barPct > 80 ? "var(--amber)" : "var(--green)", h: 5 }))));
+}
+function CheckBox({ on }) {
+    return (React.createElement("div", { style: {
+            width: 24, height: 24, borderRadius: 8, flexShrink: 0, display: "grid", placeItems: "center",
+            border: on ? "none" : "2px solid var(--line2)",
+            background: on ? "linear-gradient(135deg, var(--green2), var(--green))" : "transparent",
+            transition: "all .18s", transform: on ? "scale(1)" : "scale(1)",
+            boxShadow: on ? "0 4px 12px -4px var(--green-glow)" : "none",
+        } }, on && React.createElement(Check, { size: 15, color: "#04130a", strokeWidth: 3.5, style: { animation: "pop .25s cubic-bezier(.2,1.4,.4,1)" } })));
+}
+/* ───────────────────────── TASKS (TickTick-style) ───────────────────────── */
+function Tasks({ tasks, setTasks }) {
+    var _a;
+    const [active, setActive] = useState("all");
+    const [add, setAdd] = useState(false);
+    const [title, setTitle] = useState("");
+    const [prio, setPrio] = useState(0);
+    const [listFor, setListFor] = useState((_a = tasks.lists[0]) === null || _a === void 0 ? void 0 : _a.id);
+    const [menuId, setMenuId] = useState(null);
+    const [newListOpen, setNewListOpen] = useState(false);
+    const [newListName, setNewListName] = useState("");
+    const lists = tasks.lists;
+    const items = active === "all" ? tasks.items : tasks.items.filter((t) => t.list === active);
+    const open = items.filter((t) => !t.done).sort((a, b) => b.prio - a.prio);
+    const done = items.filter((t) => t.done);
+    const addTask = () => {
+        if (!title.trim())
+            return;
+        setTasks((p) => ({ ...p, items: [{ id: uid(), list: listFor, title: title.trim(), done: false, prio }, ...p.items] }));
+        setTitle("");
+        setPrio(0);
+        buzz(8);
+    };
+    const toggle = (id) => { buzz(8); setTasks((p) => ({ ...p, items: p.items.map((t) => t.id === id ? { ...t, done: !t.done } : t) })); };
+    const del = (id) => { setTasks((p) => ({ ...p, items: p.items.filter((t) => t.id !== id) })); setMenuId(null); };
+    const move = (id, list) => { setTasks((p) => ({ ...p, items: p.items.map((t) => t.id === id ? { ...t, list } : t) })); setMenuId(null); };
+    const cyclePrio = (id) => setTasks((p) => ({ ...p, items: p.items.map((t) => t.id === id ? { ...t, prio: (t.prio + 1) % 4 } : t) }));
+    const addList = () => { if (!newListName.trim())
+        return; const id = uid(); const colors = ["#22c55e", "#f5b53d", "#3b82f6", "#a78bfa", "#ec4899", "#14b8a6"]; setTasks((p) => ({ ...p, lists: [...p.lists, { id, name: newListName.trim(), color: colors[p.lists.length % colors.length] }] })); setNewListName(""); setNewListOpen(false); };
+    const listName = (id) => { var _a; return ((_a = lists.find((l) => l.id === id)) === null || _a === void 0 ? void 0 : _a.name) || ""; };
+    const listColor = (id) => { var _a; return ((_a = lists.find((l) => l.id === id)) === null || _a === void 0 ? void 0 : _a.color) || "var(--faint)"; };
+    return (React.createElement("div", null,
+        React.createElement("header", { style: { paddingTop: 26 } },
+            React.createElement("h1", { style: { margin: 0, fontFamily: "var(--display)", fontSize: 27, fontWeight: 800, letterSpacing: "-.03em" } }, "Zadania"),
+            React.createElement("div", { style: { color: "var(--muted)", fontSize: 13, marginTop: 2 } },
+                open.length,
+                " otwartych \u00B7 ",
+                done.length,
+                " zrobionych")),
+        React.createElement("div", { style: { display: "flex", gap: 8, overflowX: "auto", padding: "16px 0 4px", margin: "0 -16px", paddingLeft: 16, paddingRight: 16, scrollbarWidth: "none" }, className: "noscroll" },
+            React.createElement(Chip, { on: active === "all", onClick: () => setActive("all"), label: "Wszystko", color: "var(--green2)" }),
+            lists.map((l) => React.createElement(Chip, { key: l.id, on: active === l.id, onClick: () => setActive(l.id), label: l.name, color: l.color, count: tasks.items.filter((t) => t.list === l.id && !t.done).length })),
+            React.createElement("button", { onClick: () => setNewListOpen(true), style: { ...iconBtn, width: 34, height: 34, borderRadius: 99 } },
+                React.createElement(Plus, { size: 16 }))),
+        open.length === 0 && done.length === 0 && (React.createElement(Card, { style: { marginTop: 16, textAlign: "center", padding: 32, color: "var(--muted)" } },
+            React.createElement(ListTodo, { size: 28, color: "var(--faint)", style: { marginBottom: 10 } }),
+            React.createElement("div", { style: { fontSize: 14 } }, "Brak zada\u0144 tutaj. Dodaj pierwsze \u2193"))),
+        React.createElement("div", { style: { marginTop: 14 } }, open.map((t) => (React.createElement(TaskRow, { key: t.id, t: t, active: active, listName: listName, listColor: listColor, onToggle: () => toggle(t.id), onMenu: () => setMenuId(menuId === t.id ? null : t.id), onPrio: () => cyclePrio(t.id), menuOpen: menuId === t.id, lists: lists, onMove: (lid) => move(t.id, lid), onDel: () => del(t.id) })))),
+        done.length > 0 && (React.createElement(React.Fragment, null,
+            React.createElement("div", { style: sectionTitle }, "Zrobione"),
+            React.createElement("div", { style: { opacity: .6 } }, done.map((t) => (React.createElement(TaskRow, { key: t.id, t: t, active: active, listName: listName, listColor: listColor, onToggle: () => toggle(t.id), onMenu: () => setMenuId(menuId === t.id ? null : t.id), onPrio: () => { }, menuOpen: menuId === t.id, lists: lists, onMove: (lid) => move(t.id, lid), onDel: () => del(t.id) })))))),
+        React.createElement("button", { onClick: () => { var _a; setListFor(active === "all" ? (_a = lists[0]) === null || _a === void 0 ? void 0 : _a.id : active); setAdd(true); }, style: fab },
+            React.createElement(Plus, { size: 26, color: "#04130a", strokeWidth: 3 })),
+        React.createElement(Sheet, { open: add, onClose: () => setAdd(false), title: "Nowe zadanie" },
+            React.createElement("input", { style: inputStyle, placeholder: "Co trzeba zrobi\u0107?", value: title, autoFocus: true, onChange: (e) => setTitle(e.target.value), onKeyDown: (e) => { if (e.key === "Enter") {
+                    addTask();
+                    setAdd(false);
+                } } }),
+            React.createElement("label", { style: label }, "Lista"),
+            React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } }, lists.map((l) => React.createElement(Chip, { key: l.id, on: listFor === l.id, onClick: () => setListFor(l.id), label: l.name, color: l.color }))),
+            React.createElement("label", { style: label }, "Priorytet"),
+            React.createElement("div", { style: { display: "flex", gap: 8 } }, [0, 1, 2, 3].map((p) => (React.createElement("button", { key: p, onClick: () => setPrio(p), style: {
+                    flex: 1, padding: "10px", borderRadius: 11, cursor: "pointer", fontSize: 13, fontWeight: 700,
+                    border: prio === p ? `1.5px solid ${prioColor(p)}` : "1px solid var(--line2)",
+                    background: prio === p ? `${prioColor(p)}22` : "var(--surface)", color: prio === p ? prioColor(p) : "var(--muted)",
+                } }, prioLabel(p))))),
+            React.createElement("button", { style: btnPrimary, onClick: () => { addTask(); setAdd(false); } }, "Dodaj zadanie")),
+        React.createElement(Sheet, { open: newListOpen, onClose: () => setNewListOpen(false), title: "Nowa lista" },
+            React.createElement("input", { style: inputStyle, placeholder: "Nazwa listy", value: newListName, autoFocus: true, onChange: (e) => setNewListName(e.target.value), onKeyDown: (e) => { if (e.key === "Enter")
+                    addList(); } }),
+            React.createElement("button", { style: btnPrimary, onClick: addList }, "Utw\u00F3rz list\u0119"))));
+}
+function TaskRow({ t, active, listName, listColor, onToggle, onMenu, onPrio, menuOpen, lists, onMove, onDel }) {
+    return (React.createElement("div", { style: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 15, marginBottom: 9, overflow: "hidden" } },
+        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12, padding: "13px 13px" } },
+            React.createElement("div", { onClick: onToggle, style: { cursor: "pointer" } },
+                React.createElement(CheckBox, { on: t.done })),
+            React.createElement("div", { style: { flex: 1, minWidth: 0, cursor: "pointer" }, onClick: onToggle },
+                React.createElement("div", { style: { fontSize: 14.5, fontWeight: 600, color: t.done ? "var(--faint)" : "var(--text)", textDecoration: t.done ? "line-through" : "none" } }, t.title),
+                React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 4 } },
+                    active === "all" && React.createElement("span", { style: { fontSize: 11, color: listColor(t.list), display: "flex", alignItems: "center", gap: 4 } },
+                        React.createElement("span", { style: { width: 6, height: 6, borderRadius: 99, background: listColor(t.list) } }),
+                        listName(t.list)),
+                    t.prio > 0 && !t.done && React.createElement("span", { style: { fontSize: 11, color: prioColor(t.prio), fontWeight: 700 } },
+                        "\u25CF ",
+                        prioLabel(t.prio)))),
+            !t.done && React.createElement("button", { onClick: onPrio, style: { ...iconBtn, width: 32, height: 32, border: "none", background: "transparent" } },
+                React.createElement(Star, { size: 15, color: t.prio > 0 ? prioColor(t.prio) : "var(--faint)", fill: t.prio > 0 ? prioColor(t.prio) : "none" })),
+            React.createElement("button", { onClick: onMenu, style: { ...iconBtn, width: 32, height: 32, border: "none", background: "transparent" } },
+                React.createElement(MoreHorizontal, { size: 18, color: "var(--muted)" }))),
+        menuOpen && (React.createElement("div", { style: { borderTop: "1px solid var(--line)", padding: "10px 13px 12px", background: "var(--surface2)", animation: "fade .15s ease" } },
+            React.createElement("div", { style: { fontSize: 11, color: "var(--muted)", marginBottom: 7, display: "flex", alignItems: "center", gap: 5 } },
+                React.createElement(ArrowRightLeft, { size: 12 }),
+                " Przenie\u015B do"),
+            React.createElement("div", { style: { display: "flex", gap: 7, flexWrap: "wrap" } },
+                lists.filter((l) => l.id !== t.list).map((l) => (React.createElement("button", { key: l.id, onClick: () => onMove(l.id), style: { padding: "7px 12px", borderRadius: 99, border: `1px solid ${l.color}55`, background: `${l.color}18`, color: l.color, fontSize: 12.5, fontWeight: 600, cursor: "pointer" } }, l.name))),
+                React.createElement("button", { onClick: onDel, style: { padding: "7px 12px", borderRadius: 99, border: "1px solid rgba(239,68,68,.4)", background: "rgba(239,68,68,.12)", color: "var(--red)", fontSize: 12.5, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 } },
+                    React.createElement(Trash2, { size: 13 }),
+                    " Usu\u0144"))))));
+}
+function Chip({ on, onClick, label, color, count }) {
+    return (React.createElement("button", { onClick: onClick, style: {
+            padding: "8px 14px", borderRadius: 99, whiteSpace: "nowrap", cursor: "pointer", fontSize: 13, fontWeight: on ? 700 : 600,
+            border: on ? `1.5px solid ${color}` : "1px solid var(--line2)", background: on ? `${color}1f` : "var(--surface)",
+            color: on ? color : "var(--muted)", display: "flex", alignItems: "center", gap: 7, transition: "all .15s", flexShrink: 0,
+        } },
+        label,
+        count != null && count > 0 && React.createElement("span", { style: { fontSize: 11, opacity: .85, background: on ? `${color}33` : "var(--line2)", borderRadius: 99, padding: "0 6px", minWidth: 16, textAlign: "center" } }, count)));
+}
+/* ───────────────────────── TRAINING ───────────────────────── */
+function Train({ day, setDay, timer, setTimer, startTimer }) {
+    const [selId, setSelId] = useState(day.workoutId || WORKOUTS[0].id);
+    const workout = WORKOUTS.find((w) => w.id === selId) || WORKOUTS[0];
+    const sets = day.sets || {};
+    const groups = [...new Set(WORKOUTS.map((w) => w.group))];
+    const totalSets = workout.ex.reduce((a, e) => a + e.s, 0);
+    const doneSets = workout.ex.reduce((a, e) => a + (sets[e.id] || []).filter(Boolean).length, 0);
+    const pct = totalSets ? Math.round((doneSets / totalSets) * 100) : 0;
+    const toggleSet = (ex, idx) => {
+        buzz(8);
+        setDay((c) => {
+            const cs = { ...(c.sets || {}) };
+            const arr = [...(cs[ex.id] || Array(ex.s).fill(false))];
+            arr[idx] = !arr[idx];
+            cs[ex.id] = arr;
+            return { ...c, sets: cs, workoutId: selId };
+        });
+        // start rest timer when a set is completed
+        const arr = sets[ex.id] || [];
+        if (!arr[idx] && ex.rest > 0)
+            startTimer(ex.rest, ex.n);
+    };
+    const finishWorkout = () => { buzz([100, 50, 100]); setDay((c) => ({ ...c, workoutDone: true, workoutId: selId })); };
+    const resetWorkout = () => setDay((c) => ({ ...c, sets: { ...(c.sets || {}), ...Object.fromEntries(workout.ex.map((e) => [e.id, Array(e.s).fill(false)])) }, workoutDone: false }));
+    const adj = (d) => setTimer((t) => ({ ...t, left: Math.max(0, t.left + d), dur: Math.max(t.dur, t.left + d) }));
+    const presets = [45, 60, 75, 90, 120, 180];
+    return (React.createElement("div", null,
+        React.createElement("header", { style: { paddingTop: 26 } },
+            React.createElement("h1", { style: { margin: 0, fontFamily: "var(--display)", fontSize: 27, fontWeight: 800, letterSpacing: "-.03em" } }, "Trening"),
+            React.createElement("div", { style: { color: "var(--muted)", fontSize: 13, marginTop: 2 } }, "Odhaczaj serie \u00B7 timer przerw startuje sam")),
+        React.createElement(Card, { style: { marginTop: 18, display: "flex", alignItems: "center", gap: 16 } },
+            React.createElement(Ring, { pct: timer.dur ? (timer.left / timer.dur) * 100 : 0, size: 92, stroke: 8, glow: timer.running, color: timer.left === 0 ? "var(--gold)" : "var(--green)" },
+                React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 21, letterSpacing: "-.03em", fontVariantNumeric: "tabular-nums" } },
+                    pad(Math.floor(timer.left / 60)),
+                    ":",
+                    pad(timer.left % 60))),
+            React.createElement("div", { style: { flex: 1 } },
+                React.createElement("div", { style: { fontSize: 12, color: "var(--muted)", marginBottom: 8 } }, timer.label),
+                React.createElement("div", { style: { display: "flex", gap: 7, marginBottom: 9 } },
+                    React.createElement("button", { onClick: () => setTimer((t) => ({ ...t, running: !t.running, left: t.left === 0 ? t.dur : t.left })), style: timerBtn(true) }, timer.running ? React.createElement(Pause, { size: 16 }) : React.createElement(Play, { size: 16 })),
+                    React.createElement("button", { onClick: () => adj(-15), style: timerBtn() },
+                        React.createElement(Minus, { size: 15 })),
+                    React.createElement("button", { onClick: () => adj(15), style: timerBtn() },
+                        React.createElement(Plus, { size: 15 })),
+                    React.createElement("button", { onClick: () => setTimer((t) => ({ ...t, left: t.dur, running: false })), style: timerBtn() },
+                        React.createElement(RotateCcw, { size: 14 }))),
+                React.createElement("div", { style: { display: "flex", gap: 5, flexWrap: "wrap" } }, presets.map((p) => (React.createElement("button", { key: p, onClick: () => startTimer(p, "Przerwa"), style: {
+                        padding: "4px 9px", borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: "pointer",
+                        border: "1px solid var(--line2)", background: timer.dur === p ? "var(--green)" : "var(--surface2)",
+                        color: timer.dur === p ? "#04130a" : "var(--muted)",
+                    } }, p < 60 ? `${p}s` : `${p / 60}min`)))))),
+        groups.map((g) => (React.createElement("div", { key: g },
+            React.createElement("div", { style: sectionTitle }, g),
+            React.createElement("div", { style: { display: "flex", gap: 8, overflowX: "auto", margin: "0 -16px", padding: "0 16px 4px" }, className: "noscroll" }, WORKOUTS.filter((w) => w.group === g).map((w) => (React.createElement("button", { key: w.id, onClick: () => setSelId(w.id), style: {
+                    padding: "11px 14px", borderRadius: 14, cursor: "pointer", textAlign: "left", minWidth: 150, flexShrink: 0,
+                    border: selId === w.id ? "1.5px solid var(--gold)" : "1px solid var(--line2)",
+                    background: selId === w.id ? "rgba(245,181,61,.12)" : "var(--surface)",
+                } },
+                React.createElement("div", { style: { fontSize: 13.5, fontWeight: 700, color: selId === w.id ? "var(--gold2)" : "var(--text)" } }, w.name.split("—")[1] || w.name),
+                React.createElement("div", { style: { fontSize: 11, color: "var(--muted)", marginTop: 2 } },
+                    w.ex.length,
+                    " \u0107wicze\u0144")))))))),
+        React.createElement(Card, { style: { marginTop: 16, marginBottom: 4 } },
+            React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 } },
+                React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 700, fontSize: 15 } }, workout.name),
+                React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 16, color: pct === 100 ? "var(--gold2)" : "var(--green2)" } },
+                    pct,
+                    "%")),
+            React.createElement(Bar, { pct: pct, color: pct === 100 ? "var(--gold)" : "var(--green)" }),
+            React.createElement("div", { style: { fontSize: 11.5, color: "var(--muted)", marginTop: 7 } },
+                doneSets,
+                "/",
+                totalSets,
+                " serii")),
+        React.createElement("div", { style: { marginTop: 12 } }, workout.ex.map((ex) => {
+            const arr = sets[ex.id] || Array(ex.s).fill(false);
+            const exDone = arr.filter(Boolean).length;
+            return (React.createElement(Card, { key: ex.id, style: { marginBottom: 10 }, pad: 14 },
+                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 11 } },
+                    React.createElement("div", { style: { flex: 1, paddingRight: 8 } },
+                        React.createElement("div", { style: { fontSize: 14.5, fontWeight: 700 } }, ex.n),
+                        React.createElement("div", { style: { fontSize: 12, color: "var(--muted)", marginTop: 2 } },
+                            ex.s,
+                            " \u00D7 ",
+                            ex.r,
+                            ex.rest > 0 ? ` · przerwa ${ex.rest >= 60 ? `${Math.round(ex.rest / 60)} min` : `${ex.rest}s`}` : "")),
+                    React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: exDone === ex.s ? "var(--green2)" : "var(--faint)", whiteSpace: "nowrap" } },
+                        exDone,
+                        "/",
+                        ex.s)),
+                React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } }, arr.map((on, i) => (React.createElement("button", { key: i, onClick: () => toggleSet(ex, i), style: {
+                        width: 42, height: 42, borderRadius: 12, cursor: "pointer", fontFamily: "var(--display)", fontWeight: 800, fontSize: 15,
+                        border: on ? "none" : "1.5px solid var(--line2)",
+                        background: on ? "linear-gradient(135deg, var(--green2), var(--green))" : "var(--surface2)",
+                        color: on ? "#04130a" : "var(--muted)", transition: "all .15s",
+                        boxShadow: on ? "0 4px 12px -5px var(--green-glow)" : "none",
+                    } }, on ? React.createElement(Check, { size: 18, strokeWidth: 3, style: { display: "block", margin: "0 auto" } }) : i + 1))))));
+        })),
+        React.createElement("div", { style: { display: "flex", gap: 10, marginTop: 4 } },
+            React.createElement("button", { onClick: resetWorkout, style: { ...timerBtn(), width: "auto", flex: "0 0 auto", padding: "0 18px", height: 50, borderRadius: 14 } },
+                React.createElement(RotateCcw, { size: 16 })),
+            React.createElement("button", { onClick: finishWorkout, style: { ...btnPrimary, marginTop: 0, flex: 1, background: day.workoutDone ? "var(--surface2)" : "linear-gradient(135deg, var(--gold), #e0a020)", color: day.workoutDone ? "var(--green2)" : "#1a1200" } }, day.workoutDone ? "✓ Trening zaliczony" : "Zakończ trening"))));
+}
+const timerBtn = (primary) => ({
+    width: 44, height: 38, borderRadius: 11, cursor: "pointer", display: "grid", placeItems: "center", flexShrink: 0,
+    border: primary ? "none" : "1px solid var(--line2)", background: primary ? "var(--green)" : "var(--surface2)",
+    color: primary ? "#04130a" : "var(--text)",
+});
+/* ───────────────────────── HABITS + SUPPLEMENTS ───────────────────────── */
+function Habits({ habits, setHabits, supps, setSupps, day, toggleHabit, toggleSupp }) {
+    const [seg, setSeg] = useState("habits");
+    const [addOpen, setAddOpen] = useState(false);
+    const [nName, setNName] = useState("");
+    const [nHint, setNHint] = useState("");
+    const [nDose, setNDose] = useState("");
+    const [nWhen, setNWhen] = useState("Rano");
+    const [editMode, setEditMode] = useState(false);
+    const addHabit = () => { if (!nName.trim())
+        return; setHabits((p) => [...p, { id: uid(), name: nName.trim(), hint: nHint.trim(), core: true, icon: "target" }]); setNName(""); setNHint(""); setAddOpen(false); };
+    const addSupp = () => { if (!nName.trim())
+        return; setSupps((p) => [...p, { id: uid(), name: nName.trim(), dose: nDose.trim(), when: nWhen }]); setNName(""); setNDose(""); setAddOpen(false); };
+    const delHabit = (id) => setHabits((p) => p.filter((h) => h.id !== id));
+    const delSupp = (id) => setSupps((p) => p.filter((s) => s.id !== id));
+    const hDone = habits.filter((h) => day.habits[h.id]).length;
+    const sDone = supps.filter((s) => day.supps[s.id]).length;
+    const whenGroups = ["Rano", "Po treningu", "Wieczór"];
+    const whenIcon = { "Rano": Coffee, "Po treningu": Dumbbell, "Wieczór": Moon };
+    return (React.createElement("div", null,
+        React.createElement("header", { style: { paddingTop: 26, display: "flex", justifyContent: "space-between", alignItems: "flex-start" } },
+            React.createElement("div", null,
+                React.createElement("h1", { style: { margin: 0, fontFamily: "var(--display)", fontSize: 27, fontWeight: 800, letterSpacing: "-.03em" } }, "Nawyki"),
+                React.createElement("div", { style: { color: "var(--muted)", fontSize: 13, marginTop: 2 } }, seg === "habits" ? `${hDone}/${habits.length} dzisiaj` : `${sDone}/${supps.length} dzisiaj`)),
+            React.createElement("button", { onClick: () => setEditMode(!editMode), style: { ...iconBtn, width: "auto", padding: "0 14px", fontSize: 13, fontWeight: 700, color: editMode ? "var(--green2)" : "var(--muted)" } },
+                React.createElement(Pencil, { size: 14, style: { marginRight: 5 } }),
+                editMode ? "Gotowe" : "Edytuj")),
+        React.createElement("div", { style: { display: "flex", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 14, padding: 4, marginTop: 16 } }, [["habits", "Nawyki", Check], ["supps", "Suplementy", Pill]].map(([id, lbl, Ic]) => (React.createElement("button", { key: id, onClick: () => setSeg(id), style: {
+                flex: 1, padding: "10px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 700, border: "none",
+                background: seg === id ? "var(--surface2)" : "transparent", color: seg === id ? "var(--green2)" : "var(--muted)",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 7, transition: "all .15s",
+            } },
+            React.createElement(Ic, { size: 16 }),
+            lbl)))),
+        seg === "habits" ? (React.createElement("div", { style: { marginTop: 16 } }, habits.map((h) => {
+            const on = !!day.habits[h.id];
+            const Ic = ICONS[h.icon] || Check;
+            return (React.createElement("div", { key: h.id, style: { display: "flex", alignItems: "center", gap: 12, background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 15, padding: "13px 14px", marginBottom: 9 } },
+                !editMode && React.createElement("div", { onClick: () => toggleHabit(h.id), style: { cursor: "pointer" } },
+                    React.createElement(CheckBox, { on: on })),
+                React.createElement("div", { style: { width: 36, height: 36, borderRadius: 10, background: on ? "rgba(34,197,94,.12)" : "rgba(255,255,255,.05)", display: "grid", placeItems: "center", flexShrink: 0 } },
+                    React.createElement(Ic, { size: 18, color: on ? "var(--green2)" : "var(--faint)" })),
+                React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                    React.createElement("div", { style: { fontSize: 14.5, fontWeight: 600 } }, h.name),
+                    React.createElement("div", { style: { fontSize: 12, color: "var(--faint)" } }, h.hint)),
+                editMode && React.createElement("button", { onClick: () => delHabit(h.id), style: { ...iconBtn, width: 36, height: 36, border: "none", background: "rgba(239,68,68,.1)", color: "var(--red)" } },
+                    React.createElement(Trash2, { size: 16 }))));
+        }))) : (React.createElement("div", { style: { marginTop: 8 } },
+            React.createElement("div", { style: { fontSize: 12, color: "var(--faint)", margin: "10px 4px 4px", lineHeight: 1.5 } }, "To Twoja w\u0142asna lista z planu \u2014 narz\u0119dzie do odhaczania, nie porada medyczna. Trzymaj si\u0119 zasad cyklowania ze swojego arkusza."),
+            whenGroups.map((w) => {
+                const list = supps.filter((s) => s.when === w);
+                if (!list.length)
+                    return null;
+                const Ic = whenIcon[w];
+                return (React.createElement("div", { key: w },
+                    React.createElement("div", { style: { ...sectionTitle, display: "flex", alignItems: "center", gap: 7 } },
+                        React.createElement(Ic, { size: 13 }),
+                        " ",
+                        w),
+                    list.map((s) => {
+                        const on = !!day.supps[s.id];
+                        return (React.createElement("div", { key: s.id, style: { display: "flex", alignItems: "center", gap: 12, background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 15, padding: "13px 14px", marginBottom: 9 } },
+                            !editMode && React.createElement("div", { onClick: () => toggleSupp(s.id), style: { cursor: "pointer" } },
+                                React.createElement(CheckBox, { on: on })),
+                            React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                                React.createElement("div", { style: { fontSize: 14.5, fontWeight: 600, color: on ? "var(--muted)" : "var(--text)", textDecoration: on ? "line-through" : "none" } }, s.name),
+                                React.createElement("div", { style: { fontSize: 12, color: "var(--gold2)", fontWeight: 600 } }, s.dose)),
+                            editMode && React.createElement("button", { onClick: () => delSupp(s.id), style: { ...iconBtn, width: 36, height: 36, border: "none", background: "rgba(239,68,68,.1)", color: "var(--red)" } },
+                                React.createElement(Trash2, { size: 16 }))));
+                    })));
+            }))),
+        React.createElement("button", { onClick: () => { setNName(""); setNHint(""); setNDose(""); setAddOpen(true); }, style: fab },
+            React.createElement(Plus, { size: 26, color: "#04130a", strokeWidth: 3 })),
+        React.createElement(Sheet, { open: addOpen, onClose: () => setAddOpen(false), title: seg === "habits" ? "Nowy nawyk" : "Nowy suplement" },
+            React.createElement("label", { style: label }, "Nazwa"),
+            React.createElement("input", { style: inputStyle, value: nName, autoFocus: true, onChange: (e) => setNName(e.target.value), placeholder: seg === "habits" ? "np. Medytacja 5 min" : "np. Witamina C" }),
+            seg === "habits" ? (React.createElement(React.Fragment, null,
+                React.createElement("label", { style: label }, "Opis (opcjonalnie)"),
+                React.createElement("input", { style: inputStyle, value: nHint, onChange: (e) => setNHint(e.target.value), placeholder: "np. rano, przed kaw\u0105" }),
+                React.createElement("button", { style: btnPrimary, onClick: addHabit }, "Dodaj nawyk"))) : (React.createElement(React.Fragment, null,
+                React.createElement("label", { style: label }, "Dawka"),
+                React.createElement("input", { style: inputStyle, value: nDose, onChange: (e) => setNDose(e.target.value), placeholder: "np. 1000 mg" }),
+                React.createElement("label", { style: label }, "Pora"),
+                React.createElement("div", { style: { display: "flex", gap: 8 } }, whenGroups.map((w) => React.createElement(Chip, { key: w, on: nWhen === w, onClick: () => setNWhen(w), label: w, color: "var(--gold2)" }))),
+                React.createElement("button", { style: btnPrimary, onClick: addSupp }, "Dodaj suplement"))))));
+}
+/* ───────────────────────── FINANCE ───────────────────────── */
+function Money({ finance, setFinance }) {
+    var _a, _b, _c;
+    const [addOpen, setAddOpen] = useState(false);
+    const [type, setType] = useState("expense");
+    const [amount, setAmount] = useState("");
+    const [cat, setCat] = useState((_a = finance.cats[0]) === null || _a === void 0 ? void 0 : _a.id);
+    const [inc, setInc] = useState((_c = (_b = finance.income) === null || _b === void 0 ? void 0 : _b[0]) === null || _c === void 0 ? void 0 : _c.id);
+    const [note, setNote] = useState("");
+    const [editOpen, setEditOpen] = useState(false);
+    const [dCapital, setDCapital] = useState(finance.capital || 0);
+    const [dGoal, setDGoal] = useState(finance.d2dGoal || 0);
+    const [dCats, setDCats] = useState([]);
+    const [dInc, setDInc] = useState([]);
+    const [vaultOpen, setVaultOpen] = useState(false);
+    const [vaultIn, setVaultIn] = useState("");
+    const [dVaultGoal, setDVaultGoal] = useState(finance.vaultGoal || 0);
+    const month = monthKey();
+    const txM = finance.tx.filter((t) => (t.date || "").slice(0, 7) === month);
+    const spentOf = (cid) => txM.filter((t) => t.type === "expense" && t.cat === cid).reduce((a, b) => a + b.amount, 0);
+    const totalSpent = txM.filter((t) => t.type === "expense").reduce((a, b) => a + b.amount, 0);
+    const cap = finance.capital || 0;
+    const limitOf = (c) => Math.round(cap * (c.pct || 0) / 100);
+    const totalLimit = finance.cats.reduce((a, c) => a + limitOf(c), 0);
+    const allocPct = finance.cats.reduce((a, c) => a + (c.pct || 0), 0);
+    const income = txM.filter((t) => t.type === "income").reduce((a, b) => a + b.amount, 0);
+    const d2dIncome = txM.filter((t) => t.type === "income" && t.inc === "i_d2d").reduce((a, b) => a + b.amount, 0);
+    const net = income - totalSpent;
+    const budgetPct = totalLimit ? (totalSpent / totalLimit) * 100 : 0;
+    const d2dPct = finance.d2dGoal ? (d2dIncome / finance.d2dGoal) * 100 : 0;
+    const roundTo = finance.roundTo || 1;
+    const roundUpOf = (v) => { const up = Math.ceil(v / roundTo) * roundTo; const d = +(up - v).toFixed(2); return d <= 0 ? 0 : d; };
+    const vault = finance.vault || 0;
+    const vaultGoal = finance.vaultGoal || 0;
+    const vaultPct = vaultGoal ? (vault / vaultGoal) * 100 : 0;
+    const savingsRate = income > 0 ? Math.round((net / income) * 100) : 0;
+    const breakdown = finance.cats.map((c) => ({ ...c, sp: spentOf(c.id) })).filter((c) => c.sp > 0).sort((a, b) => b.sp - a.sp);
+    const tip = SAVING_TIPS[dayOfYear() % SAVING_TIPS.length];
+    const liveRound = (type === "expense" && finance.roundUp && parseFloat(amount) > 0) ? roundUpOf(parseFloat(amount)) : 0;
+    const monthName = PL_MON[new Date().getMonth()];
+    const catName = (id) => { var _a; return ((_a = finance.cats.find((c) => c.id === id)) === null || _a === void 0 ? void 0 : _a.name) || "—"; };
+    const catColor = (id) => { var _a; return ((_a = finance.cats.find((c) => c.id === id)) === null || _a === void 0 ? void 0 : _a.color) || "var(--faint)"; };
+    const incName = (id) => { var _a, _b; return ((_b = (_a = finance.income) === null || _a === void 0 ? void 0 : _a.find((c) => c.id === id)) === null || _b === void 0 ? void 0 : _b.name) || "Przychód"; };
+    const add = () => {
+        const v = parseFloat(amount);
+        if (isNaN(v) || v <= 0)
+            return;
+        const t = { id: uid(), type, amount: v, note: note.trim(), date: todayKey(), cat: type === "expense" ? cat : null, inc: type === "income" ? inc : null };
+        const ru = (type === "expense" && finance.roundUp) ? roundUpOf(v) : 0;
+        setFinance((p) => ({ ...p, tx: [t, ...p.tx], vault: (p.vault || 0) + ru, vaultRoundup: (p.vaultRoundup || 0) + ru }));
+        buzz(8);
+        setAmount("");
+        setNote("");
+        setAddOpen(false);
+    };
+    const delTx = (id) => setFinance((p) => ({ ...p, tx: p.tx.filter((t) => t.id !== id) }));
+    const addToVault = () => { const v = parseFloat(vaultIn); if (isNaN(v) || v <= 0)
+        return; setFinance((p) => ({ ...p, vault: (p.vault || 0) + v })); setVaultIn(""); setVaultOpen(false); buzz(8); };
+    const toggleRoundUp = () => { setFinance((p) => ({ ...p, roundUp: !p.roundUp })); buzz(6); };
+    const setRoundTo = (n) => setFinance((p) => ({ ...p, roundTo: n }));
+    const openEdit = () => {
+        setDCapital(finance.capital || 0);
+        setDGoal(finance.d2dGoal || 0);
+        setDVaultGoal(finance.vaultGoal || 0);
+        setDCats(finance.cats.map((c) => ({ ...c })));
+        setDInc((finance.income || []).map((c) => ({ ...c })));
+        setEditOpen(true);
+    };
+    const saveEdit = () => {
+        const cats = dCats.filter((c) => (c.name || "").trim()).map((c) => ({ id: c.id, name: c.name.trim(), pct: Math.max(0, parseFloat(c.pct) || 0), color: c.color }));
+        const incs = dInc.filter((c) => (c.name || "").trim()).map((c) => ({ id: c.id, name: c.name.trim() }));
+        setFinance((p) => ({ ...p, capital: Math.max(0, parseFloat(dCapital) || 0), d2dGoal: Math.max(0, parseFloat(dGoal) || 0), vaultGoal: Math.max(0, parseFloat(dVaultGoal) || 0), cats, income: incs.length ? incs : p.income }));
+        setEditOpen(false);
+        buzz(8);
+    };
+    const dCap = parseFloat(dCapital) || 0;
+    const dAllocPct = dCats.reduce((a, c) => a + (parseFloat(c.pct) || 0), 0);
+    return (React.createElement("div", null,
+        React.createElement("header", { style: { paddingTop: 26, display: "flex", justifyContent: "space-between", alignItems: "flex-start" } },
+            React.createElement("div", null,
+                React.createElement("h1", { style: { margin: 0, fontFamily: "var(--display)", fontSize: 27, fontWeight: 800, letterSpacing: "-.03em" } }, "Finanse"),
+                React.createElement("div", { style: { color: "var(--muted)", fontSize: 13, marginTop: 2, textTransform: "capitalize" } },
+                    monthName,
+                    " ",
+                    new Date().getFullYear())),
+            React.createElement("button", { onClick: openEdit, style: { ...iconBtn, width: "auto", padding: "0 14px", fontSize: 13, fontWeight: 700, color: "var(--green2)" } },
+                React.createElement(Pencil, { size: 14, style: { marginRight: 5 } }),
+                "Edytuj")),
+        React.createElement(Card, { style: { marginTop: 18, background: "linear-gradient(150deg, rgba(34,197,94,.08), rgba(13,15,21,0) 60%)", position: "relative" } },
+            React.createElement("div", { style: { position: "absolute", top: 16, right: 16, display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 99, background: savingsRate >= 20 ? "rgba(34,197,94,.14)" : "var(--surface2)", border: `1px solid ${savingsRate >= 20 ? "rgba(34,197,94,.35)" : "var(--line2)"}` } },
+                React.createElement(TrendingUp, { size: 12, color: savingsRate >= 20 ? "var(--green2)" : "var(--muted)" }),
+                React.createElement("span", { style: { fontSize: 11.5, fontWeight: 700, color: savingsRate >= 20 ? "var(--green2)" : "var(--muted)" } },
+                    "Oszcz\u0119dno\u015Bci ",
+                    savingsRate,
+                    "%")),
+            React.createElement("div", { style: { fontSize: 12.5, color: "var(--muted)", fontWeight: 600 } }, "Bilans miesi\u0105ca"),
+            React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 38, letterSpacing: "-.04em", color: net >= 0 ? "var(--green2)" : "var(--red)", lineHeight: 1.1, marginTop: 2 } },
+                net >= 0 ? "+" : "",
+                eur(net)),
+            React.createElement("div", { style: { display: "flex", gap: 16, marginTop: 14 } },
+                React.createElement("div", null,
+                    React.createElement("div", { style: { fontSize: 11.5, color: "var(--muted)" } }, "Przych\u00F3d"),
+                    React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 700, fontSize: 17, color: "var(--green2)" } }, eur(income))),
+                React.createElement("div", null,
+                    React.createElement("div", { style: { fontSize: 11.5, color: "var(--muted)" } }, "Wydatki"),
+                    React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 700, fontSize: 17 } }, eur(totalSpent))),
+                React.createElement("div", null,
+                    React.createElement("div", { style: { fontSize: 11.5, color: "var(--muted)" } }, "Kapita\u0142"),
+                    React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 700, fontSize: 17, color: "var(--gold2)" } }, eur(cap))))),
+        React.createElement(Card, { style: { marginTop: 12, background: "linear-gradient(150deg, rgba(245,181,61,.12), rgba(34,197,94,.05) 70%)", border: "1px solid rgba(245,181,61,.25)" } },
+            React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start" } },
+                React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10 } },
+                    React.createElement("div", { style: { width: 38, height: 38, borderRadius: 11, background: "rgba(245,181,61,.18)", display: "grid", placeItems: "center" } },
+                        React.createElement(PiggyBank, { size: 20, color: "var(--gold2)" })),
+                    React.createElement("div", null,
+                        React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 700, fontSize: 15 } }, "Skarbonka"),
+                        React.createElement("div", { style: { fontSize: 11.5, color: "var(--muted)" } },
+                            "cel ",
+                            eur(vaultGoal)))),
+                React.createElement("div", { style: { textAlign: "right" } },
+                    React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 26, letterSpacing: "-.03em", color: "var(--gold2)" } }, eur(vault)),
+                    React.createElement("div", { style: { fontSize: 11, color: "var(--green2)", fontWeight: 600 } },
+                        "z zaokr\u0105gle\u0144 ",
+                        eur(finance.vaultRoundup || 0)))),
+            React.createElement("div", { style: { margin: "12px 0 10px" } },
+                React.createElement(Bar, { pct: vaultPct, color: "linear-gradient(90deg, var(--gold), var(--gold2))", h: 9 })),
+            React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+                React.createElement("button", { onClick: () => { setVaultIn(""); setVaultOpen(true); }, style: { flex: 1, padding: "11px", borderRadius: 12, border: "none", cursor: "pointer", background: "linear-gradient(135deg, var(--gold), #e0a020)", color: "#1a1200", fontWeight: 800, fontFamily: "var(--display)", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 } },
+                    React.createElement(ArrowDownToLine, { size: 16 }),
+                    " Dorzu\u0107 do skarbonki")),
+            React.createElement("div", { onClick: toggleRoundUp, style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--line)", cursor: "pointer" } },
+                React.createElement("div", { style: { flex: 1 } },
+                    React.createElement("div", { style: { fontSize: 13.5, fontWeight: 600 } }, "Zbieraj ka\u017Cde euro"),
+                    React.createElement("div", { style: { fontSize: 11.5, color: "var(--faint)" } }, "Zaokr\u0105glaj wydatki w g\u00F3r\u0119 i odk\u0142adaj reszt\u0119")),
+                React.createElement(Toggle, { on: !!finance.roundUp, onChange: toggleRoundUp })),
+            finance.roundUp && (React.createElement("div", { style: { display: "flex", gap: 7, marginTop: 10 } },
+                React.createElement("span", { style: { fontSize: 11.5, color: "var(--muted)", alignSelf: "center", marginRight: 2 } }, "Zaokr\u0105glaj do:"),
+                [1, 2, 5].map((n) => (React.createElement("button", { key: n, onClick: (e) => { e.stopPropagation(); setRoundTo(n); }, style: { padding: "5px 12px", borderRadius: 9, fontSize: 12.5, fontWeight: 700, cursor: "pointer", border: roundTo === n ? "1.5px solid var(--gold)" : "1px solid var(--line2)", background: roundTo === n ? "rgba(245,181,61,.15)" : "var(--surface2)", color: roundTo === n ? "var(--gold2)" : "var(--muted)" } },
+                    "\u20AC",
+                    n)))))),
+        React.createElement(Card, { style: { marginTop: 12 }, onClick: openEdit },
+            React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 9 } },
+                React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 700, fontSize: 15 } }, "Bud\u017Cet wykorzystany"),
+                React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: budgetPct > 100 ? "var(--red)" : budgetPct > 80 ? "var(--amber)" : "var(--green2)" } },
+                    Math.round(budgetPct),
+                    "%")),
+            React.createElement(Bar, { pct: budgetPct, color: budgetPct > 100 ? "var(--red)" : budgetPct > 80 ? "var(--amber)" : "var(--green)", h: 10 }),
+            React.createElement("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "var(--muted)", marginTop: 7 } },
+                React.createElement("span", null,
+                    eur(totalSpent),
+                    " wydane"),
+                React.createElement("span", null,
+                    "limit ",
+                    eur(totalLimit),
+                    " \u00B7 ",
+                    allocPct,
+                    "% kapita\u0142u"))),
+        breakdown.length > 0 && (React.createElement(Card, { style: { marginTop: 12 } },
+            React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 700, fontSize: 15, marginBottom: 12 } }, "Na co id\u0105 pieni\u0105dze"),
+            React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 16 } },
+                React.createElement(Donut, { data: breakdown.map((c) => ({ value: c.sp, color: c.color })), total: totalSpent }),
+                React.createElement("div", { style: { flex: 1, minWidth: 0 } }, breakdown.slice(0, 5).map((c) => (React.createElement("div", { key: c.id, style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 7 } },
+                    React.createElement("span", { style: { width: 9, height: 9, borderRadius: 99, background: c.color, flexShrink: 0 } }),
+                    React.createElement("span", { style: { fontSize: 12.5, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, c.name),
+                    React.createElement("span", { style: { fontSize: 12.5, fontWeight: 700, color: "var(--muted)" } },
+                        totalSpent ? Math.round(c.sp / totalSpent * 100) : 0,
+                        "%")))))))),
+        React.createElement(Card, { style: { marginTop: 12, border: "1px solid rgba(245,181,61,.2)" }, onClick: openEdit },
+            React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 9, marginBottom: 10 } },
+                React.createElement("div", { style: { width: 32, height: 32, borderRadius: 9, background: "rgba(245,181,61,.14)", display: "grid", placeItems: "center" } },
+                    React.createElement(PiggyBank, { size: 17, color: "var(--gold2)" })),
+                React.createElement("div", { style: { flex: 1 } },
+                    React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 700, fontSize: 15 } }, "Cel: Biznes D2D"),
+                    React.createElement("div", { style: { fontSize: 11.5, color: "var(--muted)" } },
+                        eur(d2dIncome),
+                        " z ",
+                        eur(finance.d2dGoal),
+                        " / mies")),
+                React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 18, color: "var(--gold2)" } },
+                    Math.round(d2dPct),
+                    "%")),
+            React.createElement(Bar, { pct: d2dPct, color: "linear-gradient(90deg, var(--gold), var(--gold2))", h: 9 })),
+        React.createElement(Card, { style: { marginTop: 12, position: "relative", overflow: "hidden" } },
+            React.createElement(Lightbulb, { size: 52, style: { position: "absolute", right: -4, top: -6, opacity: .06, color: "var(--gold2)" } }),
+            React.createElement("div", { style: { fontSize: 11.5, color: "var(--gold2)", fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 8 } }, "Wskaz\u00F3wka od najbogatszych"),
+            React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 700, fontSize: 15.5, lineHeight: 1.4, letterSpacing: "-.01em" } },
+                "\u201E",
+                tip.t,
+                "\""),
+            React.createElement("div", { style: { fontSize: 12.5, color: "var(--muted)", marginTop: 8, fontWeight: 600 } },
+                "\u2014 ",
+                tip.a)),
+        React.createElement("div", { style: { ...sectionTitle, display: "flex", justifyContent: "space-between", alignItems: "center" } },
+            React.createElement("span", null, "Podzia\u0142 kapita\u0142u"),
+            allocPct !== 100 && React.createElement("span", { style: { color: allocPct > 100 ? "var(--red)" : "var(--amber)", textTransform: "none", letterSpacing: 0, fontSize: 11 } },
+                "przydzielono ",
+                allocPct,
+                "%")),
+        finance.cats.map((c) => {
+            const lim = limitOf(c);
+            const sp = spentOf(c.id);
+            const p = lim ? (sp / lim) * 100 : 0;
+            const over = p > 100;
+            return (React.createElement(Card, { key: c.id, pad: 14, style: { marginBottom: 9 } },
+                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 9 } },
+                    React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 9, minWidth: 0 } },
+                        React.createElement("span", { style: { width: 9, height: 9, borderRadius: 99, background: c.color, flexShrink: 0 } }),
+                        React.createElement("span", { style: { fontSize: 14, fontWeight: 600 } }, c.name),
+                        React.createElement("span", { style: { fontSize: 11, color: "var(--faint)", background: "var(--surface2)", borderRadius: 99, padding: "1px 7px", flexShrink: 0 } },
+                            c.pct,
+                            "%")),
+                    React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: over ? "var(--red)" : "var(--text)", whiteSpace: "nowrap" } },
+                        eur(sp),
+                        " ",
+                        React.createElement("span", { style: { color: "var(--faint)", fontWeight: 500, fontSize: 12 } },
+                            "/ ",
+                            eur(lim)))),
+                React.createElement(Bar, { pct: p, color: over ? "var(--red)" : p > 80 ? "var(--amber)" : c.color, h: 7 }),
+                over && React.createElement("div", { style: { fontSize: 11, color: "var(--red)", marginTop: 6, fontWeight: 600 } },
+                    "\u26A0 Przekroczono o ",
+                    eur(sp - lim))));
+        }),
+        txM.length > 0 && (React.createElement(React.Fragment, null,
+            React.createElement("div", { style: sectionTitle }, "Ostatnie operacje"),
+            React.createElement(Card, { pad: 6 }, txM.slice(0, 12).map((t, i) => (React.createElement("div", { key: t.id, style: { display: "flex", alignItems: "center", gap: 12, padding: "11px 10px", borderBottom: i < Math.min(11, txM.length - 1) ? "1px solid var(--line)" : "none" } },
+                React.createElement("div", { style: { width: 8, height: 8, borderRadius: 99, background: t.type === "income" ? "var(--green)" : catColor(t.cat), flexShrink: 0 } }),
+                React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                    React.createElement("div", { style: { fontSize: 14, fontWeight: 600 } }, t.type === "income" ? incName(t.inc) : catName(t.cat)),
+                    t.note && React.createElement("div", { style: { fontSize: 12, color: "var(--faint)" } }, t.note)),
+                React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 700, fontSize: 14.5, color: t.type === "income" ? "var(--green2)" : "var(--text)" } },
+                    t.type === "income" ? "+" : "−",
+                    eur(t.amount)),
+                React.createElement("button", { onClick: () => delTx(t.id), style: { ...iconBtn, width: 28, height: 28, border: "none", background: "transparent", color: "var(--faint)" } },
+                    React.createElement(X, { size: 15 })))))))),
+        React.createElement("div", { style: { height: 8 } }),
+        React.createElement("button", { onClick: () => { var _a, _b, _c; setType("expense"); setAmount(""); setNote(""); setCat((_a = finance.cats[0]) === null || _a === void 0 ? void 0 : _a.id); setInc((_c = (_b = finance.income) === null || _b === void 0 ? void 0 : _b[0]) === null || _c === void 0 ? void 0 : _c.id); setAddOpen(true); }, style: fab },
+            React.createElement(Plus, { size: 26, color: "#04130a", strokeWidth: 3 })),
+        React.createElement(Sheet, { open: addOpen, onClose: () => setAddOpen(false), title: "Nowa operacja" },
+            React.createElement("div", { style: { display: "flex", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 12, padding: 4, marginBottom: 4 } }, [["expense", "Wydatek", "var(--red)"], ["income", "Przychód", "var(--green)"]].map(([id, lbl, col]) => (React.createElement("button", { key: id, onClick: () => setType(id), style: {
+                    flex: 1, padding: "10px", borderRadius: 9, cursor: "pointer", fontSize: 14, fontWeight: 700, border: "none",
+                    background: type === id ? "var(--surface2)" : "transparent", color: type === id ? col : "var(--muted)",
+                } }, lbl)))),
+            React.createElement("label", { style: label }, "Kwota (\u20AC)"),
+            React.createElement("input", { style: { ...inputStyle, fontFamily: "var(--display)", fontSize: 22, fontWeight: 800 }, type: "number", inputMode: "decimal", value: amount, autoFocus: true, onChange: (e) => setAmount(e.target.value), placeholder: "0", onKeyDown: (e) => { if (e.key === "Enter")
+                    add(); } }),
+            React.createElement("label", { style: label }, type === "expense" ? "Kategoria" : "Źródło dochodu"),
+            React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } }, type === "expense"
+                ? finance.cats.map((c) => React.createElement(Chip, { key: c.id, on: cat === c.id, onClick: () => setCat(c.id), label: c.name, color: c.color }))
+                : (finance.income || []).map((c) => React.createElement(Chip, { key: c.id, on: inc === c.id, onClick: () => setInc(c.id), label: c.name, color: "var(--green2)" }))),
+            React.createElement("label", { style: label }, "Notatka (opcjonalnie)"),
+            React.createElement("input", { style: inputStyle, value: note, onChange: (e) => setNote(e.target.value), placeholder: "np. zakupy AH" }),
+            liveRound > 0 && (React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 12, padding: "10px 12px", borderRadius: 12, background: "rgba(245,181,61,.1)", border: "1px solid rgba(245,181,61,.25)" } },
+                React.createElement(PiggyBank, { size: 16, color: "var(--gold2)" }),
+                React.createElement("span", { style: { fontSize: 12.5, color: "var(--gold2)", fontWeight: 600 } },
+                    "Do skarbonki trafi +",
+                    eur(liveRound),
+                    " (zaokr\u0105glenie)"))),
+            React.createElement("button", { style: btnPrimary, onClick: add }, "Zapisz operacj\u0119")),
+        React.createElement(Sheet, { open: vaultOpen, onClose: () => setVaultOpen(false), title: "Dorzu\u0107 do skarbonki" },
+            React.createElement("label", { style: label }, "Kwota (\u20AC)"),
+            React.createElement("input", { style: { ...inputStyle, fontFamily: "var(--display)", fontSize: 22, fontWeight: 800 }, type: "number", inputMode: "decimal", value: vaultIn, autoFocus: true, onChange: (e) => setVaultIn(e.target.value), placeholder: "0", onKeyDown: (e) => { if (e.key === "Enter")
+                    addToVault(); } }),
+            React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 10 } }, [10, 25, 50, 100].map((q) => (React.createElement("button", { key: q, onClick: () => setVaultIn(String((parseFloat(vaultIn) || 0) + q)), style: { flex: 1, padding: "10px", borderRadius: 11, cursor: "pointer", fontSize: 13.5, fontWeight: 700, border: "1px solid var(--line2)", background: "var(--surface2)", color: "var(--gold2)" } },
+                "+",
+                q)))),
+            React.createElement("button", { style: { ...btnPrimary, background: "linear-gradient(135deg, var(--gold), #e0a020)", color: "#1a1200" }, onClick: addToVault }, "Od\u0142\u00F3\u017C do skarbonki")),
+        React.createElement(Sheet, { open: editOpen, onClose: () => setEditOpen(false), title: "Edytuj bud\u017Cet" },
+            React.createElement("label", { style: label }, "Miesi\u0119czny kapita\u0142 / bud\u017Cet (\u20AC)"),
+            React.createElement("input", { style: { ...inputStyle, fontFamily: "var(--display)", fontSize: 20, fontWeight: 800 }, type: "number", inputMode: "decimal", value: dCapital, onChange: (e) => setDCapital(e.target.value) }),
+            React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", margin: "18px 2px 8px" } },
+                React.createElement("span", { style: { fontSize: 12.5, color: "var(--muted)", fontWeight: 700, letterSpacing: ".04em" } }, "PODZIA\u0141 KAPITA\u0141U (%)"),
+                React.createElement("span", { style: { fontSize: 12, fontWeight: 700, color: dAllocPct > 100 ? "var(--red)" : dAllocPct === 100 ? "var(--green2)" : "var(--muted)" } },
+                    dAllocPct,
+                    "%")),
+            dCats.map((c, idx) => (React.createElement("div", { key: c.id, style: { marginBottom: 9 } },
+                React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
+                    React.createElement("button", { onClick: () => setDCats((p) => p.map((x, i) => i === idx ? { ...x, color: CAT_PALETTE[(CAT_PALETTE.indexOf(x.color) + 1) % CAT_PALETTE.length] } : x)), style: { width: 30, height: 38, borderRadius: 9, border: "1px solid var(--line2)", background: c.color, cursor: "pointer", flexShrink: 0 }, title: "Zmie\u0144 kolor" }),
+                    React.createElement("input", { style: { ...inputStyle, flex: 1, padding: "10px 12px" }, value: c.name, placeholder: "Nazwa sekcji", onChange: (e) => setDCats((p) => p.map((x, i) => i === idx ? { ...x, name: e.target.value } : x)) }),
+                    React.createElement("input", { style: { ...inputStyle, width: 56, padding: "10px 4px", textAlign: "center", fontWeight: 700 }, type: "number", inputMode: "decimal", value: c.pct, onChange: (e) => setDCats((p) => p.map((x, i) => i === idx ? { ...x, pct: e.target.value } : x)) }),
+                    React.createElement("button", { onClick: () => setDCats((p) => p.filter((_, i) => i !== idx)), style: { ...iconBtn, width: 38, height: 38, border: "none", background: "rgba(248,113,113,.1)", color: "var(--red)", flexShrink: 0 } },
+                        React.createElement(Trash2, { size: 16 }))),
+                React.createElement("div", { style: { fontSize: 11, color: "var(--faint)", marginLeft: 38, marginTop: 3 } },
+                    "\u2248 ",
+                    eur(Math.round(dCap * (parseFloat(c.pct) || 0) / 100)),
+                    " / mies")))),
+            React.createElement("button", { onClick: () => setDCats((p) => [...p, { id: uid(), name: "", pct: 0, color: CAT_PALETTE[p.length % CAT_PALETTE.length] }]), style: { ...inputStyle, width: "100%", cursor: "pointer", color: "var(--green2)", fontWeight: 700, textAlign: "center", border: "1px dashed var(--line2)", background: "transparent" } }, "+ Dodaj sekcj\u0119"),
+            React.createElement("div", { style: { fontSize: 12.5, color: "var(--muted)", fontWeight: 700, letterSpacing: ".04em", margin: "18px 2px 8px" } }, "\u0179R\u00D3D\u0141A DOCHODU"),
+            dInc.map((c, idx) => (React.createElement("div", { key: c.id, style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 9 } },
+                React.createElement(Coins, { size: 16, color: "var(--green2)", style: { flexShrink: 0 } }),
+                React.createElement("input", { style: { ...inputStyle, flex: 1, padding: "10px 12px" }, value: c.name, placeholder: "np. Freelance", onChange: (e) => setDInc((p) => p.map((x, i) => i === idx ? { ...x, name: e.target.value } : x)) }),
+                React.createElement("button", { onClick: () => setDInc((p) => p.filter((_, i) => i !== idx)), style: { ...iconBtn, width: 38, height: 38, border: "none", background: "rgba(248,113,113,.1)", color: "var(--red)", flexShrink: 0 } },
+                    React.createElement(Trash2, { size: 16 }))))),
+            React.createElement("button", { onClick: () => setDInc((p) => [...p, { id: uid(), name: "" }]), style: { ...inputStyle, width: "100%", cursor: "pointer", color: "var(--green2)", fontWeight: 700, textAlign: "center", border: "1px dashed var(--line2)", background: "transparent" } }, "+ Dodaj \u017Ar\u00F3d\u0142o dochodu"),
+            React.createElement("label", { style: label }, "Cel przychodu z biznesu D2D (\u20AC/mies)"),
+            React.createElement("input", { style: inputStyle, type: "number", inputMode: "decimal", value: dGoal, onChange: (e) => setDGoal(e.target.value) }),
+            React.createElement("label", { style: label }, "Cel skarbonki / oszcz\u0119dno\u015Bci (\u20AC)"),
+            React.createElement("input", { style: inputStyle, type: "number", inputMode: "decimal", value: dVaultGoal, onChange: (e) => setDVaultGoal(e.target.value) }),
+            React.createElement("button", { style: btnPrimary, onClick: saveEdit }, "Zapisz bud\u017Cet"))));
+}
+/* ───────────────────────── CALENDAR + MONTHLY SUMMARY ───────────────────────── */
+function Calendar({ events, setEvents, daily, habits, finance, profile, setProfile }) {
+    const now = new Date();
+    const [vy, setVy] = useState(now.getFullYear());
+    const [vm, setVm] = useState(now.getMonth());
+    const [sel, setSel] = useState(todayKey());
+    const [dayOpen, setDayOpen] = useState(false);
+    const [title, setTitle] = useState("");
+    const [note, setNote] = useState("");
+    const [color, setColor] = useState("#f5b53d");
+    const [goalOpen, setGoalOpen] = useState(false);
+    const [goalVal, setGoalVal] = useState(profile.workoutGoal || 12);
+    const coreHabits = habits.filter((h) => h.core);
+    const dim = new Date(vy, vm + 1, 0).getDate();
+    const firstW = (new Date(vy, vm, 1).getDay() + 6) % 7;
+    const mStr = `${vy}-${pad(vm + 1)}`;
+    const dkey = (d) => `${mStr}-${pad(d)}`;
+    const evOn = (ds) => events.filter((e) => e.date === ds);
+    const selEvents = evOn(sel);
+    const cells = [];
+    for (let i = 0; i < firstW; i++)
+        cells.push(null);
+    for (let d = 1; d <= dim; d++)
+        cells.push(d);
+    const addEvent = () => { if (!title.trim())
+        return; setEvents((p) => [...p, { id: uid(), date: sel, title: title.trim(), note: note.trim(), color }]); setTitle(""); setNote(""); buzz(8); };
+    const delEvent = (id) => setEvents((p) => p.filter((e) => e.id !== id));
+    const prevM = () => { if (vm === 0) {
+        setVm(11);
+        setVy(vy - 1);
+    }
+    else
+        setVm(vm - 1); };
+    const nextM = () => { if (vm === 11) {
+        setVm(0);
+        setVy(vy + 1);
+    }
+    else
+        setVm(vm + 1); };
+    const goToday = () => { setVy(now.getFullYear()); setVm(now.getMonth()); setSel(todayKey()); };
+    const openDay = (d) => { setSel(dkey(d)); setTitle(""); setNote(""); setColor("#f5b53d"); setDayOpen(true); };
+    // monthly summary
+    const isCur = vy === now.getFullYear() && vm === now.getMonth();
+    const isPast = vy < now.getFullYear() || (vy === now.getFullYear() && vm < now.getMonth());
+    const elapsed = isCur ? now.getDate() : (isPast ? dim : 0);
+    let workoutsDone = 0, perfectDays = 0, habitSum = 0;
+    for (let d = 1; d <= dim; d++) {
+        const rec = daily[dkey(d)];
+        if (rec && rec.workoutDone)
+            workoutsDone++;
+        if (rec && coreHabits.length && coreHabits.every((h) => rec.habits && rec.habits[h.id]))
+            perfectDays++;
+    }
+    for (let d = 1; d <= elapsed; d++) {
+        const rec = daily[dkey(d)];
+        const done = rec ? coreHabits.filter((h) => rec.habits && rec.habits[h.id]).length : 0;
+        habitSum += coreHabits.length ? done / coreHabits.length : 0;
+    }
+    const habitAvg = elapsed ? Math.round(habitSum / elapsed * 100) : 0;
+    // per-habit misses this month (over elapsed days)
+    const misses = coreHabits.map((h) => {
+        let done = 0;
+        for (let d = 1; d <= elapsed; d++) {
+            const rec = daily[dkey(d)];
+            if (rec && rec.habits && rec.habits[h.id])
+                done++;
+        }
+        return { name: h.name, missed: Math.max(0, elapsed - done), done };
+    }).sort((a, b) => b.missed - a.missed);
+    const goal = profile.workoutGoal || 12;
+    const wPct = goal ? (workoutsDone / goal) * 100 : 0;
+    const pace = isCur && dim ? goal * (elapsed / dim) : goal;
+    const behind = isCur && workoutsDone < pace - 0.5;
+    const wColor = workoutsDone >= goal ? "var(--green)" : (isPast ? "var(--red)" : (behind ? "var(--amber)" : "var(--green)"));
+    const wStatus = workoutsDone >= goal ? "Cel osiągnięty 🔥"
+        : isPast ? `Poniżej celu — brakło ${goal - workoutsDone}`
+            : behind ? `W tyle o ${Math.max(1, Math.ceil(pace - workoutsDone))} wzgl. tempa`
+                : isCur ? "Na dobrej drodze" : "Zaplanowane";
+    const txM = finance.tx.filter((t) => (t.date || "").slice(0, 7) === mStr);
+    const spent = txM.filter((t) => t.type === "expense").reduce((a, b) => a + b.amount, 0);
+    const incomeM = txM.filter((t) => t.type === "income").reduce((a, b) => a + b.amount, 0);
+    const net = incomeM - spent;
+    const cap = finance.capital || 0;
+    const totalLimit = (finance.cats || []).reduce((a, c) => a + Math.round(cap * (c.pct || 0) / 100), 0);
+    const budgetPct = totalLimit ? Math.round(spent / totalLimit * 100) : 0;
+    const WD = ["Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Nie"];
+    const selPretty = (() => {
+        const [Y, M, D] = sel.split("-").map(Number);
+        const dt = new Date(Y, M - 1, D);
+        return `${PL_DAYS[dt.getDay()]}, ${D} ${PL_MON[M - 1]}`;
+    })();
+    const EVENT_COLORS = ["#f5b53d", "#22c55e", "#3b82f6", "#a78bfa", "#ef4444", "#14b8a6"];
+    return (React.createElement("div", null,
+        React.createElement("header", { style: { paddingTop: 26, display: "flex", justifyContent: "space-between", alignItems: "center" } },
+            React.createElement("div", null,
+                React.createElement("h1", { style: { margin: 0, fontFamily: "var(--display)", fontSize: 27, fontWeight: 800, letterSpacing: "-.03em", textTransform: "capitalize" } }, PL_MON[vm]),
+                React.createElement("div", { style: { color: "var(--muted)", fontSize: 13, marginTop: 2 } }, vy)),
+            React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
+                React.createElement("button", { onClick: goToday, style: { ...iconBtn, width: "auto", padding: "0 12px", fontSize: 12.5, fontWeight: 700, color: "var(--green2)" } }, "Dzi\u015B"),
+                React.createElement("button", { onClick: prevM, style: iconBtn },
+                    React.createElement(ChevronLeft, { size: 18 })),
+                React.createElement("button", { onClick: nextM, style: iconBtn },
+                    React.createElement(ChevronRight, { size: 18 })))),
+        React.createElement(Card, { style: { marginTop: 16 }, pad: 12 },
+            React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, marginBottom: 6 } }, WD.map((w) => React.createElement("div", { key: w, style: { textAlign: "center", fontSize: 11, fontWeight: 700, color: "var(--faint)", padding: "2px 0" } }, w))),
+            React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 } }, cells.map((d, i) => {
+                if (d == null)
+                    return React.createElement("div", { key: "e" + i });
+                const ds = dkey(d);
+                const isToday = ds === todayKey();
+                const isSel = ds === sel;
+                const evs = evOn(ds);
+                const rec = daily[ds];
+                const wdone = rec && rec.workoutDone;
+                return (React.createElement("button", { key: ds, onClick: () => openDay(d), style: {
+                        position: "relative", aspectRatio: "1 / 1", minHeight: 40, borderRadius: 11, cursor: "pointer",
+                        border: isSel ? "1.5px solid var(--green)" : "1px solid transparent",
+                        background: isToday ? "rgba(34,197,94,.16)" : (evs.length ? "var(--surface2)" : "transparent"),
+                        color: isToday ? "var(--green2)" : "var(--text)", display: "flex", flexDirection: "column",
+                        alignItems: "center", justifyContent: "center", gap: 3,
+                    } },
+                    React.createElement("span", { style: { fontSize: 14, fontWeight: isToday ? 800 : 600, fontFamily: "var(--display)" } }, d),
+                    React.createElement("div", { style: { display: "flex", gap: 3, height: 5, alignItems: "center" } },
+                        evs.length > 0 && React.createElement("span", { style: { width: 5, height: 5, borderRadius: 99, background: evs[0].color || "var(--gold)" } }),
+                        wdone && React.createElement("span", { style: { width: 5, height: 5, borderRadius: 99, background: "var(--green)" } }))));
+            })),
+            React.createElement("div", { style: { display: "flex", gap: 14, marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line)", fontSize: 11, color: "var(--muted)" } },
+                React.createElement("span", { style: { display: "flex", alignItems: "center", gap: 5 } },
+                    React.createElement("span", { style: { width: 6, height: 6, borderRadius: 99, background: "var(--gold)" } }),
+                    " Wydarzenie"),
+                React.createElement("span", { style: { display: "flex", alignItems: "center", gap: 5 } },
+                    React.createElement("span", { style: { width: 6, height: 6, borderRadius: 99, background: "var(--green)" } }),
+                    " Trening zrobiony"))),
+        (() => {
+            const up = events.filter((e) => (e.date || "").slice(0, 7) === mStr).sort((a, b) => a.date.localeCompare(b.date));
+            if (!up.length)
+                return null;
+            return (React.createElement(React.Fragment, null,
+                React.createElement("div", { style: sectionTitle }, "Wa\u017Cne wydarzenia"),
+                up.map((e) => {
+                    const D = Number(e.date.split("-")[2]);
+                    return (React.createElement(Card, { key: e.id, pad: 13, style: { marginBottom: 9, display: "flex", alignItems: "center", gap: 12, borderLeft: `3px solid ${e.color || "var(--gold)"}` } },
+                        React.createElement("div", { style: { textAlign: "center", flexShrink: 0, width: 36 } },
+                            React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 18, lineHeight: 1 } }, D),
+                            React.createElement("div", { style: { fontSize: 9.5, color: "var(--faint)", textTransform: "uppercase" } }, PL_MON[vm].slice(0, 3))),
+                        React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                            React.createElement("div", { style: { fontSize: 14, fontWeight: 600 } }, e.title),
+                            e.note && React.createElement("div", { style: { fontSize: 12, color: "var(--faint)" } }, e.note)),
+                        React.createElement("button", { onClick: () => delEvent(e.id), style: { ...iconBtn, width: 30, height: 30, border: "none", background: "transparent", color: "var(--faint)" } },
+                            React.createElement(X, { size: 15 }))));
+                })));
+        })(),
+        React.createElement("div", { style: { ...sectionTitle, display: "flex", alignItems: "center", gap: 7 } },
+            React.createElement(BarChart3, { size: 13 }),
+            " Podsumowanie \u2014 ",
+            PL_MON[vm]),
+        React.createElement(Card, { style: { marginBottom: 10 }, onClick: () => { setGoalVal(profile.workoutGoal || 12); setGoalOpen(true); } },
+            React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 9 } },
+                React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 9 } },
+                    React.createElement("div", { style: { width: 34, height: 34, borderRadius: 10, background: "rgba(245,181,61,.12)", display: "grid", placeItems: "center" } },
+                        React.createElement(Dumbbell, { size: 17, color: "var(--gold2)" })),
+                    React.createElement("div", null,
+                        React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 700, fontSize: 15 } }, "Treningi"),
+                        React.createElement("div", { style: { fontSize: 11.5, color: (behind || (isPast && workoutsDone < goal)) ? "var(--amber)" : "var(--muted)" } }, wStatus))),
+                React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 22, color: wColor } },
+                    workoutsDone,
+                    React.createElement("span", { style: { fontSize: 13, color: "var(--faint)" } },
+                        " / ",
+                        goal))),
+            React.createElement(Bar, { pct: wPct, color: wColor, h: 8 }),
+            (isPast && workoutsDone < goal) && React.createElement("div", { style: { fontSize: 11.5, color: "var(--red)", marginTop: 8, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 } },
+                React.createElement(AlertTriangle, { size: 13 }),
+                " Za ma\u0142o trening\u00F3w w tym miesi\u0105cu \u2014 cel ",
+                goal,
+                "."),
+            React.createElement("div", { style: { fontSize: 10.5, color: "var(--faint)", marginTop: 7, textAlign: "right" } }, "Dotknij, aby zmieni\u0107 cel")),
+        React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 } },
+            React.createElement(Card, { pad: 14 },
+                React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 8 } },
+                    React.createElement(Flame, { size: 16, color: "var(--gold2)" }),
+                    React.createElement("span", { style: { fontSize: 12.5, color: "var(--muted)", fontWeight: 600 } }, "Dni perfekcyjne")),
+                React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 24, color: "var(--gold2)" } },
+                    perfectDays,
+                    React.createElement("span", { style: { fontSize: 13, color: "var(--faint)" } },
+                        " / ",
+                        elapsed || dim)),
+                React.createElement("div", { style: { fontSize: 11, color: "var(--faint)", marginTop: 2 } }, "wszystkie nawyki")),
+            React.createElement(Card, { pad: 14 },
+                React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 8 } },
+                    React.createElement(Check, { size: 16, color: "var(--green2)" }),
+                    React.createElement("span", { style: { fontSize: 12.5, color: "var(--muted)", fontWeight: 600 } }, "Nawyki \u015Br.")),
+                React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 24, color: habitAvg >= 80 ? "var(--green2)" : habitAvg >= 50 ? "var(--amber)" : "var(--red)" } },
+                    habitAvg,
+                    "%"),
+                React.createElement("div", { style: { marginTop: 8 } },
+                    React.createElement(Bar, { pct: habitAvg, color: habitAvg >= 80 ? "var(--green)" : habitAvg >= 50 ? "var(--amber)" : "var(--red)", h: 5 })))),
+        React.createElement(Card, { style: { marginBottom: 8 } },
+            React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 9, marginBottom: 11 } },
+                React.createElement("div", { style: { width: 34, height: 34, borderRadius: 10, background: "rgba(34,197,94,.12)", display: "grid", placeItems: "center" } },
+                    React.createElement(Coins, { size: 17, color: "var(--green2)" })),
+                React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 700, fontSize: 15 } }, "Finanse miesi\u0105ca")),
+            React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 10 } },
+                React.createElement("div", null,
+                    React.createElement("div", { style: { fontSize: 11.5, color: "var(--muted)" } }, "Bilans"),
+                    React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 700, fontSize: 18, color: net >= 0 ? "var(--green2)" : "var(--red)" } },
+                        net >= 0 ? "+" : "",
+                        eur(net))),
+                React.createElement("div", { style: { textAlign: "right" } },
+                    React.createElement("div", { style: { fontSize: 11.5, color: "var(--muted)" } }, "Bud\u017Cet"),
+                    React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 700, fontSize: 18, color: budgetPct > 100 ? "var(--red)" : "var(--text)" } },
+                        budgetPct,
+                        "%"))),
+            React.createElement(Bar, { pct: budgetPct, color: budgetPct > 100 ? "var(--red)" : budgetPct > 80 ? "var(--amber)" : "var(--green)", h: 7 })),
+        elapsed > 0 && coreHabits.length > 0 && (React.createElement(Card, { style: { marginBottom: 8 }, pad: 14 },
+            React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 } },
+                React.createElement(AlertTriangle, { size: 16, color: "var(--amber)" }),
+                React.createElement("span", { style: { fontFamily: "var(--display)", fontWeight: 700, fontSize: 15 } }, "Do poprawy w tym miesi\u0105cu")),
+            React.createElement("div", { style: { fontSize: 11.5, color: "var(--faint)", marginBottom: 12 } },
+                "Ile razy nawyk zosta\u0142 pomini\u0119ty (",
+                elapsed,
+                " dni)"),
+            misses.map((m) => {
+                const p = elapsed ? (m.missed / elapsed) * 100 : 0;
+                const col = m.missed === 0 ? "var(--green)" : p > 50 ? "var(--red)" : "var(--amber)";
+                return (React.createElement("div", { key: m.name, style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 10 } },
+                    React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                        React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 4 } },
+                            React.createElement("span", { style: { fontSize: 13, fontWeight: 600 } }, m.name),
+                            React.createElement("span", { style: { fontSize: 12.5, fontWeight: 700, color: col } }, m.missed === 0 ? "komplet ✓" : `${m.missed}× pominięte`)),
+                        React.createElement(Bar, { pct: 100 - p, color: col, h: 5 }))));
+            }),
+            React.createElement("div", { style: { display: "flex", justifyContent: "space-between", paddingTop: 10, marginTop: 2, borderTop: "1px solid var(--line)" } },
+                React.createElement("span", { style: { fontSize: 13, fontWeight: 600, color: "var(--muted)" } }, "Treningi poni\u017Cej celu"),
+                React.createElement("span", { style: { fontSize: 12.5, fontWeight: 700, color: workoutsDone >= goal ? "var(--green)" : "var(--amber)" } },
+                    Math.max(0, goal - workoutsDone),
+                    "\u00D7 brakuje")))),
+        React.createElement("button", { onClick: () => openDay(isCur ? now.getDate() : 1), style: fab },
+            React.createElement(Plus, { size: 26, color: "#04130a", strokeWidth: 3 })),
+        React.createElement(Sheet, { open: dayOpen, onClose: () => setDayOpen(false), title: selPretty },
+            selEvents.length > 0 && (React.createElement("div", { style: { marginBottom: 14 } }, selEvents.map((e) => (React.createElement("div", { key: e.id, style: { display: "flex", alignItems: "center", gap: 10, padding: "11px 12px", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 12, marginBottom: 8, borderLeft: `3px solid ${e.color || "var(--gold)"}` } },
+                React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                    React.createElement("div", { style: { fontSize: 14, fontWeight: 600 } }, e.title),
+                    e.note && React.createElement("div", { style: { fontSize: 12, color: "var(--faint)" } }, e.note)),
+                React.createElement("button", { onClick: () => delEvent(e.id), style: { ...iconBtn, width: 30, height: 30, border: "none", background: "rgba(248,113,113,.1)", color: "var(--red)" } },
+                    React.createElement(Trash2, { size: 15 }))))))),
+            React.createElement("label", { style: label }, "Nowe wa\u017Cne wydarzenie"),
+            React.createElement("input", { style: inputStyle, placeholder: "np. Spotkanie z klientem", value: title, autoFocus: true, onChange: (e) => setTitle(e.target.value), onKeyDown: (e) => { if (e.key === "Enter")
+                    addEvent(); } }),
+            React.createElement("label", { style: label }, "Notatka (opcjonalnie)"),
+            React.createElement("input", { style: inputStyle, placeholder: "szczeg\u00F3\u0142y\u2026", value: note, onChange: (e) => setNote(e.target.value) }),
+            React.createElement("label", { style: label }, "Kolor"),
+            React.createElement("div", { style: { display: "flex", gap: 10 } }, EVENT_COLORS.map((c) => (React.createElement("button", { key: c, onClick: () => setColor(c), style: { width: 32, height: 32, borderRadius: 99, background: c, cursor: "pointer", border: color === c ? "2px solid var(--text)" : "2px solid transparent" } })))),
+            React.createElement("button", { style: btnPrimary, onClick: addEvent }, "Dodaj wydarzenie")),
+        React.createElement(Sheet, { open: goalOpen, onClose: () => setGoalOpen(false), title: "Miesi\u0119czny cel trening\u00F3w" },
+            React.createElement("label", { style: label }, "Ile trening\u00F3w chcesz zrobi\u0107 w miesi\u0105cu?"),
+            React.createElement("input", { style: { ...inputStyle, fontFamily: "var(--display)", fontSize: 20, fontWeight: 800 }, type: "number", inputMode: "numeric", value: goalVal, autoFocus: true, onChange: (e) => setGoalVal(e.target.value) }),
+            React.createElement("div", { style: { fontSize: 12, color: "var(--faint)", marginTop: 6, lineHeight: 1.5 } }, "Plan PPL 3\u00D7/tydzie\u0144 \u2248 12\u201314. Kalistenika 4\u00D7/tydzie\u0144 \u2248 16. Dostaniesz alert, je\u015Bli pod koniec miesi\u0105ca b\u0119dzie ich za ma\u0142o."),
+            React.createElement("button", { style: btnPrimary, onClick: () => { const v = parseInt(goalVal); if (!isNaN(v) && v > 0)
+                    setProfile({ ...profile, workoutGoal: v }); setGoalOpen(false); } }, "Zapisz cel"))));
+}
+/* ───────────────────────── DIET / FITATU-STYLE ───────────────────────── */
+const SEED_DIET = { age: 25, sex: "m", activity: "mod", surplus: 400, proteinPerKg: 2.0, fatPerKg: 0.9 };
+const SEED_SHOPPING = {
+    stores: ["Albert Heijn", "Action", "Polski Sklep", "Dirk"],
+    items: [
+        { id: uid(), name: "Pierś z kurczaka", store: "Albert Heijn", done: false },
+        { id: uid(), name: "Jajka (10 szt)", store: "Albert Heijn", done: false },
+        { id: uid(), name: "Twaróg / kwark", store: "Albert Heijn", done: false },
+        { id: uid(), name: "Ryż / makaron pełnoziarnisty", store: "Albert Heijn", done: false },
+        { id: uid(), name: "Kasza gryczana", store: "Polski Sklep", done: false },
+        { id: uid(), name: "Kefir", store: "Polski Sklep", done: false },
+        { id: uid(), name: "Pojemniki na posiłki", store: "Action", done: false },
+        { id: uid(), name: "Banany", store: "Dirk", done: false },
+    ],
+};
+const ACT_OPTS = [
+    { k: "sed", label: "Siedzący", f: 1.2, hint: "biuro, mało ruchu" },
+    { k: "light", label: "Lekki", f: 1.375, hint: "1–2 treningi/tydz" },
+    { k: "mod", label: "Umiarkowany", f: 1.55, hint: "3–4 treningi/tydz" },
+    { k: "high", label: "Wysoki", f: 1.725, hint: "praca fizyczna + trening" },
+    { k: "veryHigh", label: "B. wysoki", f: 1.9, hint: "ciężka praca + sport" },
+];
+// macros are per 100 g (u:"g"), per 100 ml (u:"ml"), or per 1 unit (u: label like "szt")
+const FOOD_CATS = ["Mięso & ryby", "Nabiał & jaja", "Węglowodany", "Owoce & warzywa", "Tłuszcze & orzechy", "Białko & suplementy", "Przekąski", "Napoje", "Gotowe / fast food"];
+const fnorm = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const isWeight = (u) => u === "g" || u === "ml";
+const foodRef = (u) => (isWeight(u) ? 100 : 1);
+const FOODS = [
+    // Mięso & ryby (per 100 g)
+    { n: "Stek wołowy (rostbef)", cat: "Mięso & ryby", u: "g", kcal: 217, p: 26, c: 0, f: 12 },
+    { n: "Wołowina mielona 5%", cat: "Mięso & ryby", u: "g", kcal: 137, p: 21, c: 0, f: 6 },
+    { n: "Pierś z kurczaka", cat: "Mięso & ryby", u: "g", kcal: 165, p: 31, c: 0, f: 3.6 },
+    { n: "Udko z kurczaka (bez skóry)", cat: "Mięso & ryby", u: "g", kcal: 209, p: 26, c: 0, f: 11 },
+    { n: "Pierś z indyka", cat: "Mięso & ryby", u: "g", kcal: 135, p: 29, c: 0, f: 1 },
+    { n: "Schab wieprzowy", cat: "Mięso & ryby", u: "g", kcal: 242, p: 27, c: 0, f: 14 },
+    { n: "Boczek", cat: "Mięso & ryby", u: "g", kcal: 541, p: 37, c: 1.4, f: 42 },
+    { n: "Łosoś", cat: "Mięso & ryby", u: "g", kcal: 208, p: 20, c: 0, f: 13 },
+    { n: "Dorsz", cat: "Mięso & ryby", u: "g", kcal: 82, p: 18, c: 0, f: 0.7 },
+    { n: "Tuńczyk z puszki (w sosie własnym)", cat: "Mięso & ryby", u: "g", kcal: 116, p: 26, c: 0, f: 1 },
+    { n: "Krewetki", cat: "Mięso & ryby", u: "g", kcal: 99, p: 24, c: 0.2, f: 0.3 },
+    { n: "Kabanosy", cat: "Mięso & ryby", u: "g", kcal: 458, p: 24, c: 1, f: 40 },
+    { n: "Szynka drobiowa", cat: "Mięso & ryby", u: "g", kcal: 110, p: 18, c: 2, f: 3 },
+    { n: "Parówki", cat: "Mięso & ryby", u: "g", kcal: 290, p: 11, c: 2, f: 26 },
+    // Nabiał & jaja
+    { n: "Jajko", cat: "Nabiał & jaja", u: "szt", kcal: 78, p: 6.3, c: 0.6, f: 5.3 },
+    { n: "Białko jaja", cat: "Nabiał & jaja", u: "szt", kcal: 17, p: 3.6, c: 0.2, f: 0.1 },
+    { n: "Twaróg półtłusty", cat: "Nabiał & jaja", u: "g", kcal: 99, p: 17, c: 3.5, f: 2 },
+    { n: "Twaróg chudy", cat: "Nabiał & jaja", u: "g", kcal: 72, p: 18, c: 3.5, f: 0.5 },
+    { n: "Skyr / kwark 0%", cat: "Nabiał & jaja", u: "g", kcal: 63, p: 11, c: 4, f: 0.2 },
+    { n: "Serek wiejski", cat: "Nabiał & jaja", u: "g", kcal: 98, p: 12, c: 3.5, f: 4 },
+    { n: "Jogurt grecki 2%", cat: "Nabiał & jaja", u: "g", kcal: 73, p: 9, c: 4, f: 2 },
+    { n: "Jogurt naturalny", cat: "Nabiał & jaja", u: "g", kcal: 61, p: 3.5, c: 4.7, f: 3.3 },
+    { n: "Kefir", cat: "Nabiał & jaja", u: "ml", kcal: 50, p: 3.3, c: 4, f: 2 },
+    { n: "Mleko 2%", cat: "Nabiał & jaja", u: "ml", kcal: 50, p: 3.4, c: 4.8, f: 2 },
+    { n: "Ser żółty (gouda)", cat: "Nabiał & jaja", u: "g", kcal: 356, p: 25, c: 0, f: 28 },
+    { n: "Mozzarella", cat: "Nabiał & jaja", u: "g", kcal: 280, p: 22, c: 2, f: 20 },
+    { n: "Masło", cat: "Nabiał & jaja", u: "g", kcal: 717, p: 0.9, c: 0.1, f: 81 },
+    // Węglowodany
+    { n: "Ryż biały (ugotowany)", cat: "Węglowodany", u: "g", kcal: 130, p: 2.7, c: 28, f: 0.3 },
+    { n: "Ryż biały (suchy)", cat: "Węglowodany", u: "g", kcal: 360, p: 7, c: 79, f: 0.6 },
+    { n: "Ryż brązowy (ugotowany)", cat: "Węglowodany", u: "g", kcal: 123, p: 2.7, c: 26, f: 1 },
+    { n: "Makaron (ugotowany)", cat: "Węglowodany", u: "g", kcal: 158, p: 5.8, c: 31, f: 0.9 },
+    { n: "Makaron pełnoziarnisty (ugot.)", cat: "Węglowodany", u: "g", kcal: 124, p: 5, c: 26, f: 1.4 },
+    { n: "Kasza gryczana (ugotowana)", cat: "Węglowodany", u: "g", kcal: 92, p: 3.4, c: 19, f: 0.6 },
+    { n: "Ziemniaki (gotowane)", cat: "Węglowodany", u: "g", kcal: 87, p: 2, c: 20, f: 0.1 },
+    { n: "Bataty (pieczone)", cat: "Węglowodany", u: "g", kcal: 90, p: 2, c: 21, f: 0.1 },
+    { n: "Płatki owsiane (suche)", cat: "Węglowodany", u: "g", kcal: 379, p: 13, c: 67, f: 7 },
+    { n: "Chleb żytni", cat: "Węglowodany", u: "kromka", kcal: 90, p: 3, c: 17, f: 1 },
+    { n: "Chleb pełnoziarnisty", cat: "Węglowodany", u: "kromka", kcal: 80, p: 4, c: 14, f: 1 },
+    { n: "Bułka pszenna", cat: "Węglowodany", u: "szt", kcal: 145, p: 5, c: 28, f: 1.5 },
+    { n: "Tortilla pszenna", cat: "Węglowodany", u: "szt", kcal: 150, p: 4, c: 25, f: 4 },
+    // Owoce & warzywa
+    { n: "Banan", cat: "Owoce & warzywa", u: "szt", kcal: 105, p: 1.3, c: 27, f: 0.4 },
+    { n: "Jabłko", cat: "Owoce & warzywa", u: "szt", kcal: 95, p: 0.5, c: 25, f: 0.3 },
+    { n: "Pomarańcza", cat: "Owoce & warzywa", u: "szt", kcal: 62, p: 1.2, c: 15, f: 0.2 },
+    { n: "Borówki", cat: "Owoce & warzywa", u: "g", kcal: 57, p: 0.7, c: 14, f: 0.3 },
+    { n: "Truskawki", cat: "Owoce & warzywa", u: "g", kcal: 32, p: 0.7, c: 7.7, f: 0.3 },
+    { n: "Awokado", cat: "Owoce & warzywa", u: "szt", kcal: 240, p: 3, c: 12, f: 22 },
+    { n: "Brokuły", cat: "Owoce & warzywa", u: "g", kcal: 34, p: 2.8, c: 7, f: 0.4 },
+    { n: "Szpinak", cat: "Owoce & warzywa", u: "g", kcal: 23, p: 2.9, c: 3.6, f: 0.4 },
+    { n: "Marchew", cat: "Owoce & warzywa", u: "g", kcal: 41, p: 0.9, c: 10, f: 0.2 },
+    { n: "Mieszanka warzyw (mrożona)", cat: "Owoce & warzywa", u: "g", kcal: 45, p: 2.5, c: 8, f: 0.5 },
+    // Tłuszcze & orzechy
+    { n: "Oliwa z oliwek", cat: "Tłuszcze & orzechy", u: "łyżka", kcal: 90, p: 0, c: 0, f: 10 },
+    { n: "Olej rzepakowy", cat: "Tłuszcze & orzechy", u: "łyżka", kcal: 90, p: 0, c: 0, f: 10 },
+    { n: "Masło orzechowe", cat: "Tłuszcze & orzechy", u: "g", kcal: 588, p: 25, c: 20, f: 50 },
+    { n: "Migdały", cat: "Tłuszcze & orzechy", u: "g", kcal: 579, p: 21, c: 22, f: 50 },
+    { n: "Orzechy włoskie", cat: "Tłuszcze & orzechy", u: "g", kcal: 654, p: 15, c: 14, f: 65 },
+    { n: "Orzechy nerkowca", cat: "Tłuszcze & orzechy", u: "g", kcal: 553, p: 18, c: 30, f: 44 },
+    { n: "Siemię lniane", cat: "Tłuszcze & orzechy", u: "łyżka", kcal: 55, p: 1.9, c: 3, f: 4.3 },
+    { n: "Nasiona chia", cat: "Tłuszcze & orzechy", u: "łyżka", kcal: 60, p: 2, c: 5, f: 3.8 },
+    // Białko & suplementy
+    { n: "Odżywka białkowa (whey)", cat: "Białko & suplementy", u: "miarka", kcal: 120, p: 24, c: 3, f: 1.5 },
+    { n: "Baton proteinowy", cat: "Białko & suplementy", u: "szt", kcal: 200, p: 20, c: 20, f: 7 },
+    { n: "Budyń / deser proteinowy", cat: "Białko & suplementy", u: "szt", kcal: 150, p: 20, c: 9, f: 3 },
+    { n: "Kreatyna (porcja 5 g)", cat: "Białko & suplementy", u: "porcja", kcal: 0, p: 0, c: 0, f: 0 },
+    // Przekąski
+    { n: "Gorzka czekolada 70%", cat: "Przekąski", u: "g", kcal: 598, p: 7.8, c: 46, f: 43 },
+    { n: "Czekolada mleczna", cat: "Przekąski", u: "g", kcal: 535, p: 7.6, c: 59, f: 30 },
+    { n: "Wafel ryżowy", cat: "Przekąski", u: "szt", kcal: 28, p: 0.6, c: 6, f: 0.2 },
+    { n: "Chipsy", cat: "Przekąski", u: "g", kcal: 536, p: 7, c: 53, f: 34 },
+    { n: "Żelki", cat: "Przekąski", u: "g", kcal: 343, p: 7, c: 77, f: 0.2 },
+    { n: "Lody", cat: "Przekąski", u: "g", kcal: 207, p: 3.5, c: 24, f: 11 },
+    // Napoje
+    { n: "Cola", cat: "Napoje", u: "ml", kcal: 42, p: 0, c: 10.6, f: 0 },
+    { n: "Cola Zero", cat: "Napoje", u: "ml", kcal: 0.3, p: 0, c: 0, f: 0 },
+    { n: "Sok pomarańczowy", cat: "Napoje", u: "ml", kcal: 45, p: 0.7, c: 10, f: 0.2 },
+    { n: "Piwo", cat: "Napoje", u: "ml", kcal: 43, p: 0.5, c: 3.6, f: 0 },
+    { n: "Napój energetyczny", cat: "Napoje", u: "ml", kcal: 45, p: 0, c: 11, f: 0 },
+    // Gotowe / fast food
+    { n: "Pizza (kawałek)", cat: "Gotowe / fast food", u: "kawałek", kcal: 285, p: 12, c: 36, f: 10 },
+    { n: "Kebab (porcja)", cat: "Gotowe / fast food", u: "porcja", kcal: 600, p: 30, c: 40, f: 35 },
+    { n: "Hamburger", cat: "Gotowe / fast food", u: "szt", kcal: 350, p: 17, c: 30, f: 18 },
+    { n: "Frytki", cat: "Gotowe / fast food", u: "g", kcal: 312, p: 3.4, c: 41, f: 15 },
+];
+const SEED_MICROS = [
+    { id: "vd", name: "Witamina D", rda: "2000–4000 IU", src: "słońce, tłuste ryby, żółtka", supp: "s_d3" },
+    { id: "zn", name: "Cynk", rda: "11 mg", src: "wołowina, pestki dyni, jaja", supp: "s_zinc" },
+    { id: "mg", name: "Magnez", rda: "400 mg", src: "orzechy, kasze, gorzka czekolada", supp: "s_mag" },
+    { id: "omega", name: "Omega-3 (EPA/DHA)", rda: "1–2 g", src: "łosoś, makrela, siemię lniane", supp: "s_omega" },
+    { id: "vc", name: "Witamina C", rda: "90 mg", src: "papryka, cytrusy, natka" },
+    { id: "b12", name: "Witamina B12", rda: "2,4 µg", src: "mięso, ryby, nabiał, jaja" },
+    { id: "fe", name: "Żelazo", rda: "8–10 mg", src: "czerwone mięso, wątróbka, szpinak" },
+    { id: "ca", name: "Wapń", rda: "1000 mg", src: "nabiał, twaróg, jarmuż" },
+    { id: "k", name: "Potas", rda: "3500 mg", src: "banany, ziemniaki, fasola" },
+    { id: "se", name: "Selen", rda: "55 µg", src: "orzechy brazylijskie, ryby, jaja" },
+    { id: "va", name: "Witamina A", rda: "900 µg", src: "marchew, wątróbka, jaja" },
+];
+function MacroBar({ icon: Ic, label, val, target, color }) {
+    const p = target ? (val / target) * 100 : 0;
+    return (React.createElement("div", { style: { marginBottom: 11 } },
+        React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 } },
+            React.createElement("span", { style: { display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600 } },
+                React.createElement(Ic, { size: 14, color: color }),
+                " ",
+                label),
+            React.createElement("span", { style: { fontSize: 12.5, fontWeight: 700, color: "var(--muted)" } },
+                React.createElement("span", { style: { color: p > 105 ? "var(--amber)" : "var(--text)" } }, Math.round(val)),
+                " / ",
+                target,
+                " g")),
+        React.createElement(Bar, { pct: p, color: p > 105 ? "var(--amber)" : color, h: 7 })));
+}
+function Diet({ diet, setDiet, shopping, setShopping, day, setDay, profile, supps }) {
+    const [seg, setSeg] = useState("food");
+    const [goalsOpen, setGoalsOpen] = useState(false);
+    const [foodOpen, setFoodOpen] = useState(false);
+    const [shopOpen, setShopOpen] = useState(false);
+    const [storeAddOpen, setStoreAddOpen] = useState(false);
+    const [store, setStore] = useState(shopping.stores[0] || "all");
+    const [fn, setFn] = useState("");
+    const [fk, setFk] = useState("");
+    const [fp, setFp] = useState("");
+    const [fc, setFc] = useState("");
+    const [ff, setFf] = useState("");
+    const [foodQuery, setFoodQuery] = useState("");
+    const [selFood, setSelFood] = useState(null);
+    const [qty, setQty] = useState(100);
+    const [manualOpen, setManualOpen] = useState(false);
+    const [sn, setSn] = useState("");
+    const [sStore, setSStore] = useState(shopping.stores[0] || "");
+    const [newStore, setNewStore] = useState("");
+    const [dAge, setDAge] = useState(diet.age);
+    const [dAct, setDAct] = useState(diet.activity);
+    const [dSur, setDSur] = useState(diet.surplus);
+    const [dProt, setDProt] = useState(diet.proteinPerKg);
+    const [dFat, setDFat] = useState(diet.fatPerKg);
+    const [dSex, setDSex] = useState(diet.sex);
+    // targets
+    const w = profile.weight, h = profile.height, age = diet.age;
+    const bmr = Math.round(10 * w + 6.25 * h - 5 * age + (diet.sex === "m" ? 5 : -161));
+    const actF = (ACT_OPTS.find((a) => a.k === diet.activity) || { f: 1.55 }).f;
+    const tdee = Math.round(bmr * actF);
+    const calTarget = Math.round(tdee + (diet.surplus || 0));
+    const pG = Math.round((diet.proteinPerKg || 2) * w);
+    const fG = Math.round((diet.fatPerKg || 0.9) * w);
+    const cG = Math.max(0, Math.round((calTarget - pG * 4 - fG * 9) / 4));
+    const food = day.food || [];
+    const sum = food.reduce((a, x) => ({ kcal: a.kcal + (x.kcal || 0), p: a.p + (x.p || 0), c: a.c + (x.c || 0), f: a.f + (x.f || 0) }), { kcal: 0, p: 0, c: 0, f: 0 });
+    const calPct = calTarget ? (sum.kcal / calTarget) * 100 : 0;
+    const left = Math.round(calTarget - sum.kcal);
+    const addFood = (item) => { setDay((c) => ({ ...c, food: [{ id: uid(), ...item }, ...(c.food || [])] })); buzz(8); };
+    const delFood = (id) => setDay((c) => ({ ...c, food: (c.food || []).filter((x) => x.id !== id) }));
+    const addManual = () => {
+        const k = parseFloat(fk);
+        if (!fn.trim() || isNaN(k))
+            return;
+        addFood({ name: fn.trim(), kcal: k, p: parseFloat(fp) || 0, c: parseFloat(fc) || 0, f: parseFloat(ff) || 0 });
+        setFn("");
+        setFk("");
+        setFp("");
+        setFc("");
+        setFf("");
+        setManualOpen(false);
+        setFoodOpen(false);
+    };
+    const openFoodSheet = () => { setFoodQuery(""); setSelFood(null); setManualOpen(false); setFn(""); setFk(""); setFp(""); setFc(""); setFf(""); setFoodOpen(true); };
+    const pickFood = (it) => { setSelFood(it); setQty(it.u === "ml" ? 250 : isWeight(it.u) ? 100 : 1); };
+    const scale = selFood ? (parseFloat(qty) || 0) / foodRef(selFood.u) : 0;
+    const scaled = selFood ? { kcal: selFood.kcal * scale, p: selFood.p * scale, c: selFood.c * scale, f: selFood.f * scale } : null;
+    const qStep = (d) => setQty((q) => { const v = Math.max(0, (parseFloat(q) || 0) + d); return isWeight(selFood === null || selFood === void 0 ? void 0 : selFood.u) ? v : Math.round(v); });
+    const addSelected = () => {
+        if (!selFood || !(parseFloat(qty) > 0))
+            return;
+        const unitLbl = isWeight(selFood.u) ? selFood.u : selFood.u;
+        addFood({ name: `${selFood.n} (${parseFloat(qty)} ${unitLbl})`, kcal: Math.round(scaled.kcal), p: +scaled.p.toFixed(1), c: +scaled.c.toFixed(1), f: +scaled.f.toFixed(1) });
+        setSelFood(null);
+        setFoodQuery("");
+        setFoodOpen(false);
+    };
+    const foodMatches = (() => {
+        const q = fnorm(foodQuery.trim());
+        const list = q ? FOODS.filter((it) => fnorm(it.n).includes(q) || fnorm(it.cat).includes(q)) : FOODS;
+        return list;
+    })();
+    // micros
+    const microCov = (m) => !!(day.micros && day.micros[m.id]) || !!(m.supp && day.supps && day.supps[m.supp]);
+    const toggleMicro = (id) => { buzz(8); setDay((c) => ({ ...c, micros: { ...(c.micros || {}), [id]: !((c.micros || {})[id]) } })); };
+    const microsCovered = SEED_MICROS.filter(microCov).length;
+    // shopping
+    const stores = shopping.stores;
+    const addItem = () => { if (!sn.trim())
+        return; setShopping((p) => ({ ...p, items: [{ id: uid(), name: sn.trim(), store: sStore || p.stores[0], done: false }, ...p.items] })); setSn(""); buzz(8); };
+    const toggleItem = (id) => { buzz(8); setShopping((p) => ({ ...p, items: p.items.map((it) => it.id === id ? { ...it, done: !it.done } : it) })); };
+    const delItem = (id) => setShopping((p) => ({ ...p, items: p.items.filter((it) => it.id !== id) }));
+    const clearDone = () => setShopping((p) => ({ ...p, items: p.items.filter((it) => !it.done) }));
+    const addStore = () => { const n = newStore.trim(); if (!n || stores.includes(n)) {
+        setStoreAddOpen(false);
+        return;
+    } setShopping((p) => ({ ...p, stores: [...p.stores, n] })); setNewStore(""); setStoreAddOpen(false); };
+    const itemsFor = (st) => shopping.items.filter((it) => it.store === st).sort((a, b) => (a.done === b.done ? 0 : a.done ? 1 : -1));
+    const saveGoals = () => {
+        setDiet({ age: Math.max(14, parseInt(dAge) || 25), sex: dSex, activity: dAct, surplus: Math.round(parseFloat(dSur) || 0), proteinPerKg: parseFloat(dProt) || 2, fatPerKg: parseFloat(dFat) || 0.9 });
+        setGoalsOpen(false);
+        buzz(8);
+    };
+    const openGoals = () => { setDAge(diet.age); setDAct(diet.activity); setDSur(diet.surplus); setDProt(diet.proteinPerKg); setDFat(diet.fatPerKg); setDSex(diet.sex); setGoalsOpen(true); };
+    // live preview in goals sheet
+    const pBmr = Math.round(10 * w + 6.25 * h - 5 * (parseInt(dAge) || 0) + (dSex === "m" ? 5 : -161));
+    const pF = (ACT_OPTS.find((a) => a.k === dAct) || { f: 1.55 }).f;
+    const pTdee = Math.round(pBmr * pF);
+    const pTarget = Math.round(pTdee + (parseFloat(dSur) || 0));
+    const ItemRow = ({ it }) => (React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12, padding: "12px 12px", borderRadius: 13, background: "var(--surface)", border: "1px solid var(--line)", marginBottom: 8 } },
+        React.createElement("div", { onClick: () => toggleItem(it.id), style: { cursor: "pointer" } },
+            React.createElement(CheckBox, { on: it.done })),
+        React.createElement("span", { style: { flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: 600, color: it.done ? "var(--faint)" : "var(--text)", textDecoration: it.done ? "line-through" : "none", cursor: "pointer" }, onClick: () => toggleItem(it.id) }, it.name),
+        React.createElement("button", { onClick: () => delItem(it.id), style: { ...iconBtn, width: 30, height: 30, border: "none", background: "transparent", color: "var(--faint)" } },
+            React.createElement(X, { size: 15 }))));
+    const FoodRow = ({ it, onClick }) => (React.createElement("button", { onClick: onClick, style: { width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", marginBottom: 7, cursor: "pointer", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", textAlign: "left" } },
+        React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+            React.createElement("div", { style: { fontSize: 13.5, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, it.n),
+            React.createElement("div", { style: { fontSize: 11, color: "var(--faint)" } },
+                "B ",
+                it.p,
+                " \u00B7 W ",
+                it.c,
+                " \u00B7 T ",
+                it.f,
+                " \u00B7 /",
+                isWeight(it.u) ? (it.u === "ml" ? "100ml" : "100g") : it.u)),
+        React.createElement("span", { style: { fontFamily: "var(--display)", fontWeight: 700, fontSize: 13.5, color: "var(--gold2)", whiteSpace: "nowrap" } },
+            it.kcal,
+            " kcal")));
+    return (React.createElement("div", null,
+        React.createElement("header", { style: { paddingTop: 26, display: "flex", justifyContent: "space-between", alignItems: "flex-start" } },
+            React.createElement("div", null,
+                React.createElement("h1", { style: { margin: 0, fontFamily: "var(--display)", fontSize: 27, fontWeight: 800, letterSpacing: "-.03em" } }, "Dieta"),
+                React.createElement("div", { style: { color: "var(--muted)", fontSize: 13, marginTop: 2 } }, seg === "food" ? `cel ${calTarget} kcal · ${w}→${profile.goal} kg` : `${shopping.items.filter((i) => !i.done).length} rzeczy do kupienia`)),
+            seg === "food" && (React.createElement("button", { onClick: openGoals, style: { ...iconBtn, width: "auto", padding: "0 14px", fontSize: 13, fontWeight: 700, color: "var(--green2)" } },
+                React.createElement(Pencil, { size: 14, style: { marginRight: 5 } }),
+                "Cele"))),
+        React.createElement("div", { style: { display: "flex", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 14, padding: 4, marginTop: 16 } }, [["food", "Jedzenie", Utensils], ["shop", "Zakupy", ShoppingCart]].map(([id, lbl, Ic]) => (React.createElement("button", { key: id, onClick: () => setSeg(id), style: {
+                flex: 1, padding: "10px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 700, border: "none",
+                background: seg === id ? "var(--surface2)" : "transparent", color: seg === id ? "var(--green2)" : "var(--muted)",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 7, transition: "all .15s",
+            } },
+            React.createElement(Ic, { size: 16 }),
+            lbl)))),
+        seg === "food" ? (React.createElement("div", null,
+            React.createElement(Card, { style: { marginTop: 14, display: "flex", alignItems: "center", gap: 16 } },
+                React.createElement(Ring, { pct: calPct, size: 108, stroke: 10, glow: calPct >= 100, color: calPct > 110 ? "var(--amber)" : "var(--green)" },
+                    React.createElement("div", null,
+                        React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 24, lineHeight: 1, letterSpacing: "-.03em" } }, Math.round(sum.kcal)),
+                        React.createElement("div", { style: { fontSize: 10, color: "var(--muted)", marginTop: 1 } },
+                            "z ",
+                            calTarget))),
+                React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                    React.createElement("div", { style: { display: "flex", alignItems: "baseline", gap: 6 } },
+                        React.createElement("span", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 20, color: left < 0 ? "var(--amber)" : "var(--green2)" } }, Math.abs(left)),
+                        React.createElement("span", { style: { fontSize: 12, color: "var(--muted)" } },
+                            "kcal ",
+                            left < 0 ? "ponad cel" : "pozostało")),
+                    React.createElement("div", { style: { fontSize: 11.5, color: "var(--faint)", margin: "3px 0 10px" } }, "kcal spo\u017Cyte dzisiaj"),
+                    React.createElement(Bar, { pct: calPct, color: calPct > 110 ? "var(--amber)" : "var(--green)", h: 8 }))),
+            React.createElement(Card, { style: { marginTop: 12 } },
+                React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 700, fontSize: 15, marginBottom: 12 } }, "Makrosk\u0142adniki"),
+                React.createElement(MacroBar, { icon: Beef, label: "Bia\u0142ko", val: sum.p, target: pG, color: "var(--green)" }),
+                React.createElement(MacroBar, { icon: Wheat, label: "W\u0119glowodany", val: sum.c, target: cG, color: "var(--blue)" }),
+                React.createElement(MacroBar, { icon: Droplet, label: "T\u0142uszcze", val: sum.f, target: fG, color: "var(--gold)" }),
+                React.createElement("div", { style: { fontSize: 11, color: "var(--faint)", marginTop: 4, lineHeight: 1.5 } },
+                    "Wyliczone pod przyrost masy (78\u2192",
+                    profile.goal,
+                    " kg). Szacunki, nie porada medyczna \u2014 dostosuj \u201ECele\".")),
+            React.createElement("div", { style: sectionTitle }, "Dziennik \u2014 dzisiaj"),
+            food.length === 0 ? (React.createElement(Card, { style: { textAlign: "center", padding: 28, color: "var(--muted)" } },
+                React.createElement(Utensils, { size: 26, color: "var(--faint)", style: { marginBottom: 8 } }),
+                React.createElement("div", { style: { fontSize: 14 } }, "Brak posi\u0142k\u00F3w. Dodaj pierwszy \u2193"))) : (React.createElement(Card, { pad: 6 }, food.map((x, i) => (React.createElement("div", { key: x.id, style: { display: "flex", alignItems: "center", gap: 10, padding: "11px 10px", borderBottom: i < food.length - 1 ? "1px solid var(--line)" : "none" } },
+                React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                    React.createElement("div", { style: { fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, x.name),
+                    React.createElement("div", { style: { fontSize: 11.5, color: "var(--faint)" } },
+                        "B ",
+                        Math.round(x.p),
+                        " \u00B7 W ",
+                        Math.round(x.c),
+                        " \u00B7 T ",
+                        Math.round(x.f),
+                        " g")),
+                React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 700, fontSize: 14.5, color: "var(--gold2)" } },
+                    Math.round(x.kcal),
+                    React.createElement("span", { style: { fontSize: 10.5, color: "var(--faint)" } }, " kcal")),
+                React.createElement("button", { onClick: () => delFood(x.id), style: { ...iconBtn, width: 28, height: 28, border: "none", background: "transparent", color: "var(--faint)" } },
+                    React.createElement(X, { size: 15 }))))))),
+            React.createElement("div", { style: { ...sectionTitle, display: "flex", justifyContent: "space-between", alignItems: "center" } },
+                React.createElement("span", { style: { display: "flex", alignItems: "center", gap: 7 } },
+                    React.createElement(Carrot, { size: 13 }),
+                    " Mikrosk\u0142adniki"),
+                React.createElement("span", { style: { textTransform: "none", letterSpacing: 0, fontSize: 11.5, color: microsCovered === SEED_MICROS.length ? "var(--green2)" : "var(--amber)" } },
+                    microsCovered,
+                    "/",
+                    SEED_MICROS.length,
+                    " pokryte")),
+            React.createElement("div", { style: { fontSize: 11.5, color: "var(--faint)", margin: "0 4px 10px" } }, "Odhaczaj, co dzi\u015B jad\u0142e\u015B/suplementowa\u0142e\u015B \u2014 reszta to Twoje braki."),
+            SEED_MICROS.map((m) => {
+                const cov = microCov(m);
+                const bySupp = !!(m.supp && day.supps && day.supps[m.supp]);
+                return (React.createElement("div", { key: m.id, onClick: () => toggleMicro(m.id), style: {
+                        display: "flex", alignItems: "center", gap: 12, padding: "11px 13px", marginBottom: 8, cursor: "pointer",
+                        borderRadius: 13, background: "var(--surface)", border: `1px solid ${cov ? "rgba(34,197,94,.25)" : "var(--line)"}`,
+                    } },
+                    React.createElement(CheckBox, { on: cov }),
+                    React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 7 } },
+                            React.createElement("span", { style: { fontSize: 14, fontWeight: 600, color: cov ? "var(--muted)" : "var(--text)" } }, m.name),
+                            React.createElement("span", { style: { fontSize: 11, color: "var(--faint)" } }, m.rda),
+                            bySupp && React.createElement("span", { style: { fontSize: 9.5, color: "var(--green2)", background: "rgba(34,197,94,.12)", borderRadius: 99, padding: "1px 6px" } }, "suplement \u2713")),
+                        React.createElement("div", { style: { fontSize: 11.5, color: "var(--faint)", marginTop: 1 } }, m.src))));
+            }),
+            React.createElement("div", { style: { height: 8 } }),
+            React.createElement("button", { onClick: openFoodSheet, style: fab },
+                React.createElement(Plus, { size: 26, color: "#04130a", strokeWidth: 3 })))) : (React.createElement("div", null,
+            React.createElement("div", { style: { display: "flex", gap: 8, overflowX: "auto", padding: "16px 0 4px", margin: "0 -16px", paddingLeft: 16, paddingRight: 16 }, className: "noscroll" },
+                React.createElement(Chip, { on: store === "all", onClick: () => setStore("all"), label: "Wszystko", color: "var(--green2)", count: shopping.items.filter((i) => !i.done).length }),
+                stores.map((s) => React.createElement(Chip, { key: s, on: store === s, onClick: () => setStore(s), label: s, color: "var(--gold2)", count: shopping.items.filter((i) => i.store === s && !i.done).length })),
+                React.createElement("button", { onClick: () => { setNewStore(""); setStoreAddOpen(true); }, style: { ...iconBtn, width: 34, height: 34, borderRadius: 99 } },
+                    React.createElement(Plus, { size: 16 }))),
+            React.createElement("div", { style: { marginTop: 14 } }, store === "all" ? (shopping.items.length === 0 ? (React.createElement(Card, { style: { textAlign: "center", padding: 28, color: "var(--muted)" } },
+                React.createElement(ShoppingCart, { size: 26, color: "var(--faint)", style: { marginBottom: 8 } }),
+                React.createElement("div", { style: { fontSize: 14 } }, "Lista pusta. Dodaj co\u015B \u2193"))) : (stores.filter((s) => itemsFor(s).length > 0).map((s) => (React.createElement("div", { key: s, style: { marginBottom: 10 } },
+                React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 7, margin: "4px 4px 8px" } },
+                    React.createElement(Store, { size: 13, color: "var(--gold2)" }),
+                    React.createElement("span", { style: { fontFamily: "var(--display)", fontSize: 13, fontWeight: 700, color: "var(--muted)" } }, s)),
+                itemsFor(s).map((it) => React.createElement(ItemRow, { key: it.id, it: it }))))))) : (itemsFor(store).length === 0 ? (React.createElement(Card, { style: { textAlign: "center", padding: 28, color: "var(--muted)" } },
+                React.createElement(ShoppingCart, { size: 26, color: "var(--faint)", style: { marginBottom: 8 } }),
+                React.createElement("div", { style: { fontSize: 14 } },
+                    "Brak rzeczy dla \u201E",
+                    store,
+                    "\". Dodaj \u2193"))) : (itemsFor(store).map((it) => React.createElement(ItemRow, { key: it.id, it: it }))))),
+            shopping.items.some((i) => i.done) && (React.createElement("button", { onClick: clearDone, style: { ...inputStyle, width: "100%", cursor: "pointer", color: "var(--faint)", fontWeight: 600, textAlign: "center", border: "1px dashed var(--line2)", background: "transparent", marginTop: 4 } }, "Usu\u0144 kupione")),
+            React.createElement("div", { style: { height: 8 } }),
+            React.createElement("button", { onClick: () => { setSn(""); setSStore(store === "all" ? stores[0] : store); setShopOpen(true); }, style: fab },
+                React.createElement(Plus, { size: 26, color: "#04130a", strokeWidth: 3 })))),
+        React.createElement(Sheet, { open: goalsOpen, onClose: () => setGoalsOpen(false), title: "Cele kaloryczne" },
+            React.createElement("div", { style: { display: "flex", gap: 10, padding: 14, borderRadius: 14, background: "var(--surface)", border: "1px solid var(--line)", marginBottom: 4 } },
+                React.createElement("div", { style: { flex: 1, textAlign: "center" } },
+                    React.createElement("div", { style: { fontSize: 11, color: "var(--muted)" } }, "BMR"),
+                    React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 18 } }, pBmr)),
+                React.createElement("div", { style: { flex: 1, textAlign: "center", borderLeft: "1px solid var(--line)", borderRight: "1px solid var(--line)" } },
+                    React.createElement("div", { style: { fontSize: 11, color: "var(--muted)" } }, "TDEE"),
+                    React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 18 } }, pTdee)),
+                React.createElement("div", { style: { flex: 1, textAlign: "center" } },
+                    React.createElement("div", { style: { fontSize: 11, color: "var(--green2)" } }, "Cel"),
+                    React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 18, color: "var(--green2)" } }, pTarget))),
+            React.createElement("label", { style: label }, "Wiek"),
+            React.createElement("input", { style: inputStyle, type: "number", inputMode: "numeric", value: dAge, onChange: (e) => setDAge(e.target.value) }),
+            React.createElement("label", { style: label }, "P\u0142e\u0107"),
+            React.createElement("div", { style: { display: "flex", gap: 8 } }, [["m", "Mężczyzna"], ["f", "Kobieta"]].map(([k, l]) => React.createElement(Chip, { key: k, on: dSex === k, onClick: () => setDSex(k), label: l, color: "var(--green2)" }))),
+            React.createElement("label", { style: label }, "Aktywno\u015B\u0107"),
+            React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 7 } }, ACT_OPTS.map((a) => (React.createElement("button", { key: a.k, onClick: () => setDAct(a.k), style: {
+                    display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 13px", borderRadius: 12, cursor: "pointer", textAlign: "left",
+                    border: dAct === a.k ? "1.5px solid var(--green)" : "1px solid var(--line2)", background: dAct === a.k ? "rgba(34,197,94,.1)" : "var(--surface)",
+                } },
+                React.createElement("span", { style: { fontSize: 14, fontWeight: 700, color: dAct === a.k ? "var(--green2)" : "var(--text)" } }, a.label),
+                React.createElement("span", { style: { fontSize: 11.5, color: "var(--faint)" } },
+                    a.hint,
+                    " \u00B7 \u00D7",
+                    a.f))))),
+            React.createElement("label", { style: label },
+                "Nadwy\u017Cka kaloryczna (na mas\u0119): +",
+                Math.round(parseFloat(dSur) || 0),
+                " kcal"),
+            React.createElement("input", { style: inputStyle, type: "number", inputMode: "numeric", value: dSur, onChange: (e) => setDSur(e.target.value) }),
+            React.createElement("div", { style: { display: "flex", gap: 10 } },
+                React.createElement("div", { style: { flex: 1 } },
+                    React.createElement("label", { style: label }, "Bia\u0142ko (g/kg)"),
+                    React.createElement("input", { style: inputStyle, type: "number", inputMode: "decimal", value: dProt, onChange: (e) => setDProt(e.target.value) })),
+                React.createElement("div", { style: { flex: 1 } },
+                    React.createElement("label", { style: label }, "T\u0142uszcze (g/kg)"),
+                    React.createElement("input", { style: inputStyle, type: "number", inputMode: "decimal", value: dFat, onChange: (e) => setDFat(e.target.value) }))),
+            React.createElement("button", { style: btnPrimary, onClick: saveGoals }, "Zapisz cele")),
+        React.createElement(Sheet, { open: foodOpen, onClose: () => setFoodOpen(false), title: "Dodaj posi\u0142ek" },
+            React.createElement("input", { style: inputStyle, placeholder: "Szukaj produktu (np. stek, ry\u017C, jajko)", value: foodQuery, autoFocus: true, onChange: (e) => { setFoodQuery(e.target.value); setSelFood(null); } }),
+            selFood && (React.createElement("div", { style: { marginTop: 12, padding: 14, borderRadius: 14, background: "var(--surface2)", border: "1px solid var(--green)" } },
+                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 } },
+                    React.createElement("div", { style: { fontSize: 14.5, fontWeight: 700 } }, selFood.n),
+                    React.createElement("button", { onClick: () => setSelFood(null), style: { ...iconBtn, width: 28, height: 28, border: "none", background: "transparent", color: "var(--faint)" } },
+                        React.createElement(X, { size: 15 }))),
+                React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+                    React.createElement("button", { onClick: () => qStep(isWeight(selFood.u) ? -10 : -1), style: { width: 44, height: 42, borderRadius: 11, cursor: "pointer", display: "grid", placeItems: "center", flexShrink: 0, border: "1px solid var(--line2)", background: "var(--surface)", color: "var(--text)" } },
+                        React.createElement(Minus, { size: 15 })),
+                    React.createElement("input", { style: { ...inputStyle, textAlign: "center", fontFamily: "var(--display)", fontWeight: 800, fontSize: 18, flex: 1 }, type: "number", inputMode: "decimal", value: qty, onChange: (e) => setQty(e.target.value) }),
+                    React.createElement("span", { style: { fontSize: 13, color: "var(--muted)", minWidth: 40, textAlign: "center" } }, selFood.u),
+                    React.createElement("button", { onClick: () => qStep(isWeight(selFood.u) ? 10 : 1), style: { width: 44, height: 42, borderRadius: 11, cursor: "pointer", display: "grid", placeItems: "center", flexShrink: 0, border: "none", background: "var(--green)", color: "#04130a" } },
+                        React.createElement(Plus, { size: 15 }))),
+                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginTop: 12 } },
+                    React.createElement("div", { style: { textAlign: "center", flex: 1 } },
+                        React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 18, color: "var(--gold2)" } }, Math.round(scaled.kcal)),
+                        React.createElement("div", { style: { fontSize: 10, color: "var(--faint)" } }, "kcal")),
+                    React.createElement("div", { style: { textAlign: "center", flex: 1 } },
+                        React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 18, color: "var(--green2)" } }, scaled.p.toFixed(1)),
+                        React.createElement("div", { style: { fontSize: 10, color: "var(--faint)" } }, "B (g)")),
+                    React.createElement("div", { style: { textAlign: "center", flex: 1 } },
+                        React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 18, color: "var(--blue)" } }, scaled.c.toFixed(1)),
+                        React.createElement("div", { style: { fontSize: 10, color: "var(--faint)" } }, "W (g)")),
+                    React.createElement("div", { style: { textAlign: "center", flex: 1 } },
+                        React.createElement("div", { style: { fontFamily: "var(--display)", fontWeight: 800, fontSize: 18, color: "var(--gold)" } }, scaled.f.toFixed(1)),
+                        React.createElement("div", { style: { fontSize: 10, color: "var(--faint)" } }, "T (g)"))),
+                React.createElement("button", { style: btnPrimary, onClick: addSelected }, "Dodaj do dziennika"))),
+            !selFood && (React.createElement("div", { style: { maxHeight: "44vh", overflowY: "auto", margin: "12px -2px 0", padding: "0 2px" }, className: "noscroll" }, foodQuery.trim()
+                ? (foodMatches.length === 0
+                    ? React.createElement("div", { style: { textAlign: "center", color: "var(--muted)", fontSize: 13, padding: 20 } }, "Brak wynik\u00F3w \u2014 wpisz r\u0119cznie poni\u017Cej.")
+                    : foodMatches.map((it) => React.createElement(FoodRow, { key: it.n, it: it, onClick: () => pickFood(it) })))
+                : FOOD_CATS.map((cat) => {
+                    const items = FOODS.filter((x) => x.cat === cat);
+                    if (!items.length)
+                        return null;
+                    return (React.createElement("div", { key: cat },
+                        React.createElement("div", { style: { fontFamily: "var(--display)", fontSize: 11.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", letterSpacing: ".06em", margin: "10px 2px 7px" } }, cat),
+                        items.map((it) => React.createElement(FoodRow, { key: it.n, it: it, onClick: () => pickFood(it) }))));
+                }))),
+            !selFood && (React.createElement(React.Fragment, null,
+                React.createElement("button", { onClick: () => setManualOpen((o) => !o), style: { ...inputStyle, width: "100%", cursor: "pointer", color: "var(--muted)", fontWeight: 700, textAlign: "center", border: "1px dashed var(--line2)", background: "transparent", marginTop: 12 } }, manualOpen ? "Ukryj ręczne wpisywanie" : "Nie ma na liście? Wpisz ręcznie"),
+                manualOpen && (React.createElement("div", { style: { marginTop: 10 } },
+                    React.createElement("input", { style: inputStyle, placeholder: "Nazwa (np. Jogurt marki X)", value: fn, onChange: (e) => setFn(e.target.value) }),
+                    React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 8 } },
+                        React.createElement("input", { style: { ...inputStyle, flex: 1.2 }, type: "number", inputMode: "numeric", placeholder: "kcal", value: fk, onChange: (e) => setFk(e.target.value) }),
+                        React.createElement("input", { style: { ...inputStyle, flex: 1 }, type: "number", inputMode: "decimal", placeholder: "B", value: fp, onChange: (e) => setFp(e.target.value) }),
+                        React.createElement("input", { style: { ...inputStyle, flex: 1 }, type: "number", inputMode: "decimal", placeholder: "W", value: fc, onChange: (e) => setFc(e.target.value) }),
+                        React.createElement("input", { style: { ...inputStyle, flex: 1 }, type: "number", inputMode: "decimal", placeholder: "T", value: ff, onChange: (e) => setFf(e.target.value) })),
+                    React.createElement("button", { style: btnPrimary, onClick: addManual }, "Dodaj do dziennika")))))),
+        React.createElement(Sheet, { open: shopOpen, onClose: () => setShopOpen(false), title: "Dodaj do listy" },
+            React.createElement("label", { style: label }, "Co kupi\u0107?"),
+            React.createElement("input", { style: inputStyle, placeholder: "np. Mas\u0142o orzechowe", value: sn, autoFocus: true, onChange: (e) => setSn(e.target.value), onKeyDown: (e) => { if (e.key === "Enter") {
+                    addItem();
+                    setShopOpen(false);
+                } } }),
+            React.createElement("label", { style: label }, "Sklep"),
+            React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } }, stores.map((s) => React.createElement(Chip, { key: s, on: sStore === s, onClick: () => setSStore(s), label: s, color: "var(--gold2)" }))),
+            React.createElement("button", { style: btnPrimary, onClick: () => { addItem(); setShopOpen(false); } }, "Dodaj do listy")),
+        React.createElement(Sheet, { open: storeAddOpen, onClose: () => setStoreAddOpen(false), title: "Nowy sklep" },
+            React.createElement("input", { style: inputStyle, placeholder: "Nazwa sklepu", value: newStore, autoFocus: true, onChange: (e) => setNewStore(e.target.value), onKeyDown: (e) => { if (e.key === "Enter")
+                    addStore(); } }),
+            React.createElement("button", { style: btnPrimary, onClick: addStore }, "Dodaj sklep"))));
+}
+const fab = {
+    position: "fixed", bottom: 84, right: "max(16px, calc(50% - 230px + 16px))", zIndex: 45,
+    width: 56, height: 56, borderRadius: 18, border: "none", cursor: "pointer",
+    background: "linear-gradient(135deg, var(--green2), var(--green))", display: "grid", placeItems: "center",
+    boxShadow: "0 12px 28px -8px var(--green-glow), 0 0 0 1px rgba(255,255,255,.06)",
+};
+const rootBase = { background: "#07090d", minHeight: "100vh" };
+/* ───────────────────────── styles ───────────────────────── */
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&display=swap');
+.mp-root{
+  --bg:#07090d; --bg2:#0c0f15; --surface:#11151c; --surface2:#181d27;
+  --line:rgba(255,255,255,.07); --line2:rgba(255,255,255,.13);
+  --text:#eef2f6; --muted:#8b97a7; --faint:#586675;
+  --green:#22c55e; --green2:#5ee592; --green-glow:rgba(34,197,94,.45);
+  --gold:#f5b53d; --gold2:#ffd277; --red:#f87171; --amber:#fbbf24; --blue:#60a5fa;
+  --display:'Bricolage Grotesque',sans-serif; --body:'Hanken Grotesk',sans-serif;
+  font-family:var(--body); color:var(--text);
+  background:
+    radial-gradient(800px 500px at 50% -8%, rgba(34,197,94,.08), transparent 70%),
+    radial-gradient(600px 400px at 100% 12%, rgba(245,181,61,.05), transparent 70%),
+    var(--bg);
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+}
+*{box-sizing:border-box;}
+.mp-root button{font-family:var(--body);}
+.mp-root .grain{position:fixed;inset:0;pointer-events:none;z-index:1;opacity:.025;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
+.noscroll::-webkit-scrollbar{display:none;}
+.noscroll{-ms-overflow-style:none;scrollbar-width:none;}
+@keyframes fade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
+@keyframes slideUp{from{opacity:0;transform:translateY(40px);}to{opacity:1;transform:translateY(0);}}
+@keyframes pop{0%{transform:scale(.3);}100%{transform:scale(1);}}
+@keyframes pulse{0%,100%{opacity:.5;}50%{opacity:1;}}
+@keyframes dropIn{from{opacity:0;transform:translate(-50%,-16px);}to{opacity:1;transform:translate(-50%,0);}}
+input::placeholder{color:var(--faint);}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
+`;
+/* ── standalone bootstrap ── */
+createRoot(document.getElementById("root")).render(React.createElement(App));
+
+</script>
+</body>
+</html>
